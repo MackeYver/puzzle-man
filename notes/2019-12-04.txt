@@ -1,0 +1,131 @@
+# Day four
+## 2019-12-04
+
+### General status of the project so far
+I forgot to take notes from day two and three so I will try to capture all that
+in this note.
+Generally about the project so far: all the code lives in one file. My plan is
+that I will implement all the base funtionality this way and once all that is in
+place I will seperate the program into logical units. I think that a logical
+structure will emerge naturally during development and to have it all in once
+place makes it a bit easier to change stuff around. I will not be limited by a
+predetermined structure.
+
+
+### Day two
+#### A lexer and a parser
+I created a simple file format (text-based) that can be used to create levels.
+It uses a couple of ASCII-chars that I selected to make it easy to read a level
+in text format (i.e. 'w' = wall, 'P' = pacman, '-' = unused cell, and so on...).
+
+Most of day two, and large parts of day three, were spent on creating the lexer
+that tokenizes the file and the parser that parses the tokens into all the data
+structures that are used by the game.
+
+For instance, the character '1' will tokenized into Token_identifier which the
+parser later on will parse into Token_Level_Ghost_Red and add a Actor to the
+Actor array.
+
+
+### Day three
+In addition to creating the base of a lexer and parser, day three also saw the
+addition of BMP file loading. The game now uses sprites instead of coloured
+squares.
+The game draws the sprites into the backbuffer with alpha blending. It is using
+a version of BMP files that have 32 bits per pixel, that is, it is using an
+alpha channel. Normally this isn't supported for BMP files, but the file format
+actually supports it, it is just that most of the softwares out there doesn't.
+I found an application called Pixelformer that actually exports images correctly.
+
+My reason for doing it this way is that I think that writing a loader for other
+formats (e.g. png) will involve a lot of work and since I intend to write all
+code for myself I don't want to use a library. The BMP format is trivial to load
+and I will not use a lot of resources in this project which means that I can
+accept a sub-optimal toolchain for sprites.
+(Pixelformer exports the file format correctly but it is lacking some features
+I want whan I draw sprites. So what happens now is that I create the sprites in
+Paint.net, saves them as png files, opens them in Pixelformer and exporting as
+BMP with 32 bits per pixel).
+
+
+### Day four
+Once the lexer and the parser were up and running (and producing correct results)
+I connected everything so now we can create levels with a text editor and the
+game will read that file and render the sprites correctly. Next up will be to
+handle input.
+
+
+#### A bug with the parsing
+Once everything were up and running I saw that the rending of every levels was
+off by one in x. All tiles were shifted one position to the right (see image 1).
+
+Nothing obvious stuck out while I looked at the code for the parsing so I started
+to look at what was saved in the tiles and compared it to what come up in the
+renderer. Tiles that were saved as walls were indeed rendered as walls, so it
+seemed like the error was in the parsing and not due to a mismatch between data
+and logic (i.e. that walls were being rendered as something else).
+
+Using the old trusted printf I printed all the characters that were parsed and in
+the order it was parsed. The result revealed that it was indeed one character off.
+Then the next step was to look at the calculation of the indices.
+All data is stored in one continous array and when the file is parsed and saved
+an index into that array is calculated based on a x and y value. Like this:
+
+    for (x = 0; x < width; ++x) {
+        for (y = 0; y < height; ++y) {
+	    index = (width * y) + x
+	    data_array[index] = 
+	 }
+    }
+
+The reason for doing that instead of just looping on the index, like this:
+
+    for (index = 0; index < (width * height); ++index) {
+    }
+
+The level data is stored in a text file and read from bottom-down but we want to
+save it bottom-up, or else the level will be rendered with reversed y. This way
+the result of the rendering matches what the input in the text file looks like,
+which makes debugging and designing levels easier.
+But, all the calculation seemd correct and it was confusing until I realised that
+I hade some operations in the wrong order. This:
+
+    eat_spaces_and_newline(tokenizer);
+    reload(tokenizer);
+
+    if (should_advance) {
+        advance(tokenizer);
+        ++x;
+        if (x == level->width) {
+            ++y;
+            x = 0;
+        }                
+    }
+
+Should be this:
+
+    if (should_advance) {
+        advance(tokenizer);
+        ++x;
+        if (x == level->width) {
+            ++y;
+            x = 0;
+        }                
+    }
+
+    eat_spaces_and_newline(tokenizer);
+    reload(tokenizer);
+
+The difference being that in first code snippet, spaces and newlines are skipped
+before the position in the text file is advanced -- but then the position is still
+at the old position and there are no spaces or newlines to eat! Also, since the
+tokenizer are being reloaded at the old position, it will reload with the old data
+making it parse the previous data for the next iteration, i.e. it will always be
+one step behind. Changing the code to the second example completely solved it. Now
+it is eating spaces and being reloaded based on the new position.
+That completely resoved the issue (see image 2).
+
+In short, dealing with text files is trivial but also dodgy and annoying.
+
+
+

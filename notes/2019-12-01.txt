@@ -1,0 +1,42 @@
+#2019-12-01
+
+
+## About the project
+I will try to take some notes while I work with this project. The notes will be
+quick and dirty; don't expect Hemingway level of literature here (or spelling
+for that matter -- I don't use any spellchecker...).
+
+This project will basically just be a learning exercise, I will use Pac-man as
+"design language", it is well known and explored so I can focus on programming,
+design of the mechanics and level design.
+
+My plan is to create a software renderer, I will render to an array which I will
+blit to the screen using BitBlt in the WM_PAIN message. I will not use any other
+GDI functions. My ambition is to do more or less everything myself.
+
+
+### Day 1
+#### A skeleton
+I created a simple win32 skeleton of a program quite quickly, but ran in to some
+issues with the rendering more or less immediately. But first, a description of
+what the program does so far. I use PeekMessage in the main loop and I use
+QueryPerfomanceCounter for timing. The timing is currently hard-coded to 60 Hz,
+and every frame the loop calls InvalidateRect() in order to post a WM_PAINT
+message which will blit the backbuffer-array to the screen.
+
+#### Rendering issue
+The issue I ran into is that as soon as I move the mouse the rendering pauses.
+It turns out that the message WM_PAINT has a lower priority than WM_MOUSEMOVE
+(and others). To make sure that the WM_PANT message will be handled every frame
+we need to bypass the message queue, which we do by calling UpdateWindow() just
+after the InvalidateRect() call. This will pass the WM_PAINT message directly
+to my window procedurec. Issue solved!
+
+
+#### Alpha blending
+I will do all the blending calculations myself when I draw to the array used
+as memory for the backbuffer. The BitBlt will just copy the entire array and
+replace the contents of the client area. Currently I'm doing some sort of alpa-
+blending but I don't feel particulary confident about it. I have never looked
+in-depth of the math behind alpha blending, so now is a perfect opportunity to
+do so!
