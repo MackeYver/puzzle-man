@@ -322,7 +322,7 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
         draw_bitmap(render_state, P, &resources->bitmaps.ghost_eye);
     }
     
-    if (actor_is_alive(pacman)) {
+    if (actor_is_alive(pacman) && actor_is_alive(actor)) {
         f32 Pax = static_cast<f32>(Po.x);
         f32 Pay = static_cast<f32>(Po.y);
         f32 Ppx = static_cast<f32>(kCell_Size * pacman->position.x);
