@@ -4,6 +4,20 @@
 //
 
 #include <math.h>
+#include <float.h>
+
+static b32 almost_equal_relative(f32 a, f32 b, f32 MaxRelDiff = FLT_EPSILON)
+{
+    // From: https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
+    // Calculate the difference.
+    float Diff = fabsf(a - b);
+    a = fabsf(a);
+    b = fabsf(b);
+    float Largest = (b > a) ? b : a;
+
+    if (Diff <= Largest * MaxRelDiff)  return true;
+    return false;
+}
 
 
 

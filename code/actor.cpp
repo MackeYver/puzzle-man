@@ -330,20 +330,22 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
 
         f32 dx = Ppx - Pax;
         f32 dy = Ppy - Pay;
-        f32 l = sqrtf(dx*dx + dy*dy);
-        dx = dx / l;
-        dy = dy / l;
-        
-        dx *= 3;
-        dy *= 4;
+        f32 l = sqrtf(dx * dx + dy * dy);
+        if (!almost_equal_relative(l, 0.0f)) {
+            dx = dx / l;
+            dy = dy / l;
 
-        f32 Px = static_cast<f32>(P.x) + dx;
-        f32 Py = static_cast<f32>(P.y) + dy;
+            dx *= 3;
+            dy *= 4;
 
-        assert(Px >= 0);
-        assert(Py >= 0);
-        
-        P = V2u(static_cast<u32>(Px), static_cast<u32>(Py));
+            f32 Px = static_cast<f32>(P.x) + dx;
+            f32 Py = static_cast<f32>(P.y) + dy;
+
+            assert(Px >= 0);
+            assert(Py >= 0);
+
+            P = V2u(static_cast<u32>(Px), static_cast<u32>(Py));
+        }
     }
     draw_bitmap(render_state, P, &resources->bitmaps.ghost_pupil);
 }
