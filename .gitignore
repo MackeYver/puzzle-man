@@ -1,2 +1,4 @@
 #Directories
-build/
+build/*.pdb
+build/*.obj
+build/visual_studio_nonsense
