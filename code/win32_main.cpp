@@ -385,7 +385,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     game.log.flush_immediately = true;
 
 
-    log_str(&game.log, "Initializing all of the things...");
+    log_str(&game.log, "Starting initializations...");
     
    
     //
@@ -474,6 +474,8 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         }
     }
 
+
+    log_str(&game.log, "All initializations completed, starting game...");
     
     
     //

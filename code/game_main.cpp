@@ -913,6 +913,8 @@ b32 init_game(Game *game) {
     // TODO: add error handling!
     {   
         Resources *resources = &game->resources;
+
+        log_str(&game->log, "Beginning to load resources...");
         
         // bitmaps
         if (result)  result = load_bitmap("data\\bitmaps\\pacman.bmp", &resources->bitmaps.pacman);
@@ -945,7 +947,12 @@ b32 init_game(Game *game) {
         if (result)  result = load_wav("data\\audio\\lost.wav", &resources->wavs.lost);
         if (result)  result = load_wav("data\\audio\\nope.wav", &resources->wavs.nope);
 
-        if (!result)  LOG_ERROR(&game->log, "failed to load resources, is the data directory present?", 0);
+        if (!result) {
+            LOG_ERROR(&game->log, "failed to load resources, is the data directory present?", 0);
+        }
+        else {
+            log_str(&game->log, "All resources loaded");
+        }        
 
 
         
@@ -959,6 +966,7 @@ b32 init_game(Game *game) {
         // load worlds
         {
             init_array_of_worlds(&game->worlds, 1);
+            log_str(&game->log, "Loading worlds...");
             
             WIN32_FIND_DATAA file_data;
             HANDLE search_handle = FindFirstFileA("data\\worlds\\*.wld", &file_data);
@@ -970,6 +978,10 @@ b32 init_game(Game *game) {
                 if (!result)  LOG_ERROR_STR(&game->log, "failed to load world", file_data.cFileName);
             }
             while (FindNextFileA(search_handle, &file_data) != 0);
+        }
+
+        if (result) {
+            log_str(&game->log, "All worlds loaded.");
         }
 
         game->microseconds_since_start = 0;
@@ -994,12 +1006,14 @@ b32 init_game(Game *game) {
     game->state = Game_State_Player_Select;
     game->current_map_index = Map_Count; // DEBUG
 
+    log_str(&game->log, "Creating maps...");
     World *world = get_current_world(game);
     Player_Profile *profile = get_current_player_profile(game);
     s32 level_index = get_highest_completed_level_index(profile, world) + 1;
     level_index = level_index < static_cast<s32>(world->level_count) ? level_index : 0;
     load_level(world, level_index);
     create_maps_off_level(game->maps, &world->levels[world->current_level_index]);
+    log_str(&game->log, "Maps created.");
 
     return result;
 }
