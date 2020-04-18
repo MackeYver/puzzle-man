@@ -1981,6 +1981,7 @@ void draw_level(Game *game) {
         print(render_state, font, V2u(render_state->backbuffer_width - text_dim.x - char_width, 10), map_name_text);
 #endif
     }
+#if 0
     else {
         // DEBUG
         for (u32 y = 0; y < level_height; ++y) {
@@ -2018,6 +2019,7 @@ void draw_level(Game *game) {
             }
         }
     }
+#endif
     
     //
     // Draw win/defeat if relevant
