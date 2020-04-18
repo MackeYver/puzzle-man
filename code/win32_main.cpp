@@ -435,7 +435,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 
     ShowWindow(hwnd, CmdShow);
     UpdateWindow(hwnd);
-    log_str(&game.log, "Done with win32 start-up.");
+    log_str(&game.log, "Done with win32 start-up");
 
 
     
@@ -447,7 +447,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             LOG_ERROR(&game.log, "failed to initialize the software renderer", result);
             return result;
         }
-        log_str(&game.log, "Software renderer initialized.");
+        log_str(&game.log, "Software renderer initialized");
             
         result = init_audio(&game.audio_state, &game.log);
         if (!result) {
@@ -455,7 +455,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             LOG_ERROR(&game.log, "failed to initialize the audio system", result);            
             return -1;
         }
-        log_str(&game.log, "XAudio2 initilized.");
+        log_str(&game.log, "XAudio2 initilized");
     }
     
 
@@ -463,7 +463,12 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     //
     // Init game
     {        
-        init_game(&game);
+        if (init_game(&game)) {
+        log_str(&game.log, "Game initilized");
+        }
+        else {
+            LOG_ERROR_STR(&game.log, "failed to initialized game", 0);
+        }
     }
 
     

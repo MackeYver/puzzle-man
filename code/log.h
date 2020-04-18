@@ -96,7 +96,7 @@ static void log_current_time(Log *log) {
 
 
 static void log_str(Log *log, char const *string) {
-    if (log) {
+    if (log && string) {
         log_current_time(log);
         fprintf(log->file, "%s\n", string);
     }
@@ -140,7 +140,12 @@ static void log_error_str(Log *log, char const *string, char const *error_string
         log_current_time(log);
 
         if (file && function && line) {
-            fprintf(log->file, "Error in %s in %s at line %u, %s (%s)\n", file, function, line, string, error_string);
+            if (error_string) {
+                fprintf(log->file, "Error in %s in %s at line %u, %s (%s)\n", file, function, line, string, error_string);
+            }
+            else {
+                fprintf(log->file, "Error in %s in %s at line %u, %s\n", file, function, line, string);
+            }
         }
         else {
             fprintf(log->file, "Error, %s (%s)\n", string, error_string);
