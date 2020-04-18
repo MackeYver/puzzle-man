@@ -13,6 +13,7 @@
 struct Log {
     FILE *file = nullptr;
     b32 print_log = false;
+    b32 flush_immediately = true;
 };
 
 static b32 open_log(Log *log);
@@ -67,6 +68,10 @@ static b32 open_log(Log *log) {
                 fprintf(log->file, "!ERROR: failed to get the current date and time, error: %d\n", time_result);
             }            
         }
+
+        if (log->flush_immediately) {
+            fflush(log->file);
+        }
     }
 
     return result;
@@ -99,6 +104,10 @@ static void log_str(Log *log, char const *string) {
     if (log->print_log || !log) {
         printf(string);
     }
+
+    if (log->flush_immediately) {
+        fflush(log->file);
+    }
 }
 
 
@@ -112,6 +121,10 @@ static void log_error(Log *log, char const *string, u32 error_value, char const 
         }
         else {
             fprintf(log->file, "Error, %s (%u)\n", string, error_value);
+        }
+
+        if (log->flush_immediately) {
+            fflush(log->file);
         }
     }
 
@@ -131,6 +144,10 @@ static void log_error_str(Log *log, char const *string, char const *error_string
         }
         else {
             fprintf(log->file, "Error, %s (%s)\n", string, error_string);
+        }
+
+        if (log->flush_immediately) {
+            fflush(log->file);
         }
     }
 
