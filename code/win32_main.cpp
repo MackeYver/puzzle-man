@@ -379,7 +379,10 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     SetWindowPos(console_hwnd, HWND_TOPMOST, 300, 500, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 
     game.log.print_log = true;
-#endif  
+#endif
+
+    game.log.print_log = true;
+    game.log.flush_immediately = true;
 
 
     log_str(&game.log, "Commencing win32 start-up");
