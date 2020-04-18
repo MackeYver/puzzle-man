@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <assert.h>
 
 
@@ -73,8 +74,9 @@ f32 clamp_01(f32 a) {
 
 
 
+
 //
-// Utilities
+// Utilities, win32
 //
 
 b32 win32_read_entire_file(char const *path_and_name, u8 **data, u32 *size) {
@@ -156,6 +158,7 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
 // Includes
 //
 
+#include "log.h"
 #include "wav.cpp"
 #include "win32_audio.cpp"
 #include "tokenizer.cpp"
@@ -359,6 +362,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
 
 int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, int CmdShow)
 {
+    Game game;
+    open_log(&game.log);
+    
+    wchar_t const *class_name = L"puzzle-man";
+
+
+    
     //
     // Allocate a console and direct the standard output to it
 #ifdef DEBUG
@@ -366,12 +376,13 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     FILE* pcout;
     freopen_s(&pcout, "conout$", "w", stdout);
     HWND console_hwnd = GetConsoleWindow();
-    SetWindowPos(console_hwnd, HWND_TOPMOST, 300, 500, 0, 0, SWP_NOSIZE | SWP_NOZORDER); 
-#endif
+    SetWindowPos(console_hwnd, HWND_TOPMOST, 300, 500, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 
-    Game game;    
-    wchar_t const *class_name = L"SoftPac";
+    game.log.print_log = true;
+#endif  
 
+
+    log_str(&game.log, "Commencing win32 start-up");
     
    
     //
@@ -392,10 +403,10 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         u32 result = RegisterClassEx(&window_class);
         if (result == 0) {
             u32 error = GetLastError();
-            printf("Error, failed to register WNDCLASSEX, error %u\n", error);
+            LOG_ERROR(&game.log, "failed to register WNDCLASSEX", error);
             return -1;
-        }    
-   
+        }
+        
         //
         // Create window
         DWORD window_style = WS_CAPTION | WS_SYSMENU | WS_SIZEBOX;
@@ -417,30 +428,34 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
                               &game);
         if (hwnd == 0) {
             int error = GetLastError();
-            printf("Error, failed to create the window, error %u\n", error);
+            LOG_ERROR(&game.log, "failed to create the window", error);
             return -2;
         }
     }
 
     ShowWindow(hwnd, CmdShow);
     UpdateWindow(hwnd);
+    log_str(&game.log, "Done with win32 start-up.");
 
 
     
     //
     // Init renderer and audio
     {
-        b32 result = init_renderer(&game.render_state, hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
-        if (!result) {
-            printf("Error, failed to initialize the software renderer, error %u\n", result);
+        b32 result = init_renderer(&game.render_state, &game.log, hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
+        if (!result) {            
+            LOG_ERROR(&game.log, "failed to initialize the software renderer", result);
             return result;
         }
+        log_str(&game.log, "Software renderer initialized.");
             
-        result = init_audio(&game.audio_state);
+        result = init_audio(&game.audio_state, &game.log);
         if (!result) {
-            printf("Error, failed to initialize the audio system\n");
+            //printf("Error, failed to initialize the audio system\n");
+            LOG_ERROR(&game.log, "failed to initialize the audio system", result);            
             return -1;
         }
+        log_str(&game.log, "XAudio2 initilized.");
     }
     
 
@@ -562,6 +577,8 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     fclose(pcout);
     FreeConsole();
 #endif
+
+    close_log(&game.log);
    
     return 0;
 }

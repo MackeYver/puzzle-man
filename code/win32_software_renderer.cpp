@@ -4,7 +4,6 @@
 //
 
 
-
 struct Render_State {
     v4u8  *backbuffer_memory = nullptr;        
     HBITMAP backbuffer_bitmap = nullptr;
@@ -12,6 +11,7 @@ struct Render_State {
     u32     backbuffer_width = 0;
     u32     backbuffer_height = 0;
     HWND hwnd = nullptr;
+    Log *log = nullptr;
 };
 
 
@@ -26,9 +26,10 @@ void fini_renderer(Render_State *render_state) {
 }
 
 
-b32 init_renderer(Render_State *render_state, HWND hwnd, u32 width, u32 height) {
+b32 init_renderer(Render_State *render_state, Log *log, HWND hwnd, u32 width, u32 height) {
     b32 result = true;
-    
+
+    render_state->log = log;
     render_state->backbuffer_width = width;
     render_state->backbuffer_height = height;
     render_state->hwnd = hwnd;
@@ -44,25 +45,25 @@ b32 init_renderer(Render_State *render_state, HWND hwnd, u32 width, u32 height) 
 
     HDC hdc = GetDC(hwnd);
     if (!hdc) {
-        u32 error = GetLastError();
-        printf("%s() failed to get the window's hdc, %u\n", __FUNCTION__, error);
-        ReleaseDC(hwnd, hdc);            
+        u32 error = GetLastError();        
+        LOG_ERROR(log, "failed to get the window's hdc", error);
+        ReleaseDC(hwnd, hdc);
         result = false;
     }
         
     render_state->backbuffer_bitmap = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS,
                                                        reinterpret_cast<void **>(&render_state->backbuffer_memory), nullptr, 0);
     if (result && !render_state->backbuffer_bitmap) {
-        u32 error = GetLastError();
-        printf("%s() failed to create the backbuffer, %u\n", __FUNCTION__, error);
+        u32 error = GetLastError();                
+        LOG_ERROR(log, "failed to create the backbuffer", error);
         result = false;
     }
 
     render_state->backbuffer_hdc = CreateCompatibleDC(hdc);
     if (result && !render_state->backbuffer_hdc) {
         u32 error = GetLastError();
-        printf("%s() failed to create the backbuffer's hdc, %u\n", __FUNCTION__, error);        
-        result = false;
+        LOG_ERROR(log, "failed to create the backbuffer's hdc", error);
+        result = false;        
     }
 
     if (result) {

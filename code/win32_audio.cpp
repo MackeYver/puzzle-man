@@ -57,6 +57,7 @@ struct Audio_State {
     IXAudio2MasteringVoice *mastering_voice = nullptr;
     IXAudio2SubmixVoice *submix_voice = nullptr;
     Audio_Source sources[kAudio_Total_Voice_Count];
+    Log *log = nullptr;
     //Voice_Callback callback;
 };
 
@@ -99,7 +100,7 @@ b32 static critical_error(Audio_State *state, HRESULT hresult, char const *error
     b32 result = false;
     
     if (FAILED(hresult)) {
-        printf("%s() %s, error = 0x%x\n", __FUNCTION__, error_message, hresult);
+        LOG_ERROR(state->log, error_message, hresult);        
         result = false;
         fini_audio(state);
     }
@@ -108,7 +109,8 @@ b32 static critical_error(Audio_State *state, HRESULT hresult, char const *error
 }
 
 
-b32 static init_audio(Audio_State *state) {
+b32 static init_audio(Audio_State *state, Log *log) {
+    state->log = log;
     HRESULT hresult = XAudio2Create(&state->xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR);
     if (critical_error(state, hresult, "failed to create the xaudio object"))  return false;
 
