@@ -2,3 +2,5 @@
 build/*.pdb
 build/*.obj
 build/visual_studio_nonsense
+run_tree/*.exe
+run_tree/log.txt

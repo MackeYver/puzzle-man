@@ -914,41 +914,31 @@ b32 init_game(Game *game) {
     {   
         Resources *resources = &game->resources;
 
-        log_str(&game->log, "Beginning to load resources...");
+        log_str(&game->log, "Loading resources...");
         
         // bitmaps
-        if (result)  result = load_bitmap("data\\bitmaps\\pacman.bmp", &resources->bitmaps.pacman);
-        log_str(&game->log, "Hello1?");
-        
+        if (result)  result = load_bitmap("data\\bitmaps\\pacman.bmp", &resources->bitmaps.pacman);        
         if (result)  result = load_bitmap("data\\bitmaps\\ghost_red.bmp", &resources->bitmaps.ghost_red);
-        log_str(&game->log, "Hello2?");
-        
         if (result)  result = load_bitmap("data\\bitmaps\\ghost_pink.bmp", &resources->bitmaps.ghost_pink);
-        log_str(&game->log, "Hello3?");
-        
         if (result)  result = load_bitmap("data\\bitmaps\\ghost_cyan.bmp", &resources->bitmaps.ghost_cyan);
-        log_str(&game->log, "Hello4?");
-        
         if (result)  result = load_bitmap("data\\bitmaps\\ghost_orange.bmp", &resources->bitmaps.ghost_orange);
         if (result)  result = load_bitmap("data\\bitmaps\\ghost_as_prey.bmp", &resources->bitmaps.ghost_as_prey);
         if (result)  result = load_bitmap("data\\bitmaps\\ghost_eyes.bmp", &resources->bitmaps.ghost_eye);
         if (result)  result = load_bitmap("data\\bitmaps\\ghost_pupils.bmp", &resources->bitmaps.ghost_pupil);
         if (result)  result = load_bitmap("data\\bitmaps\\dot_large.bmp", &resources->bitmaps.dot_large);
         if (result)  result = load_bitmap("data\\bitmaps\\dot_small.bmp", &resources->bitmaps.dot_small);
-        log_str(&game->log, "Hello5?");
         if (result)  result = load_bitmap("data\\bitmaps\\background.bmp", &resources->bitmaps.background);
         if (result)  result = load_bitmap("data\\bitmaps\\pacman_atlas.bmp", &resources->bitmaps.pacman_atlas);
-        log_str(&game->log, "Hello6?");
 
         char path[24];
         for (u32 index = 0; result && (index < 16); ++index) {
             _snprintf_s(path, 24, _TRUNCATE, "data\\bitmaps\\wall%02u.bmp", index);
             result = load_bitmap(path, &resources->bitmaps.walls[index]);
-            log_str(&game->log, "Hello_loop?");
         }
         
         // fonts
         if (result)  result = load_font("data\\fonts", "font", &resources->font);
+        log_str(&game->log, "font loaded");        
     
         // wavs
         if (result)  result = load_wav("data\\audio\\eat_large_dot.wav", &resources->wavs.eat_large_dot);
