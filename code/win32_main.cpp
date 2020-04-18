@@ -385,7 +385,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     game.log.flush_immediately = true;
 
 
-    log_str(&game.log, "Commencing win32 start-up");
+    log_str(&game.log, "Initializing all of the things...");
     
    
     //
@@ -438,7 +438,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 
     ShowWindow(hwnd, CmdShow);
     UpdateWindow(hwnd);
-    log_str(&game.log, "Done with win32 start-up");
+    log_str(&game.log, "win32 initialized");
 
 
     
@@ -467,7 +467,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     // Init game
     {        
         if (init_game(&game)) {
-        log_str(&game.log, "Game initilized");
+            log_str(&game.log, "Game initilized");
         }
         else {
             LOG_ERROR_STR(&game.log, "failed to initialized game", 0);

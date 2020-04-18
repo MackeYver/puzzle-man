@@ -53,14 +53,14 @@ static b32 open_log(Log *log) {
             fprintf(log->file, "    \\|__|     \\|_______|\\|_______|\\|_______|\\|_______|\\|_______|               \\|__|     \\|__|\\|__|\\|__|\\|__| \\|__|\n");
             fprintf(log->file, "\n\n");
             fprintf(log->file, "     A puzzle-homage to Pac-man\n");
-            fprintf(log->file, "     Created by Marcus Larsson 2020\n\n\n\n");
+            fprintf(log->file, "     Created by Marcus Larsson 2020\n\n");
             
             time_t timer;
             time(&timer);            
             tm local_time;
             u32 time_result = localtime_s(&local_time, &timer);
             if (time_result == 0) {
-                fprintf(log->file, "(%04d-%02d-%02d, %02d-%02d-%02d) log-file created.\n",
+                fprintf(log->file, "(%04d-%02d-%02d, %02d:%02d:%02d) log-file created.\n",
                         1900 + local_time.tm_year, 1 + local_time.tm_mon, local_time.tm_mday,
                         local_time.tm_hour, local_time.tm_min, local_time.tm_sec);
             }
