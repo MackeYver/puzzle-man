@@ -208,7 +208,6 @@ b32 static play_wav(Audio_State *state, Wav *wav) {
             
             //
             // Check formats
-            #ifdef DEBUG
             if ((source->format.nChannels != wav->format.number_of_channels) ||
                 (source->format.nSamplesPerSec != wav->format.sample_rate) ||
                 (source->format.nAvgBytesPerSec!= wav->format.average_bytes_per_second) ||
@@ -219,7 +218,6 @@ b32 static play_wav(Audio_State *state, Wav *wav) {
                 result = init_voice(state, source, wav);
                 assert(result);
             }
-            #endif
             
 
             // setup buffer
@@ -234,8 +232,10 @@ b32 static play_wav(Audio_State *state, Wav *wav) {
             source->buffer.pContext = nullptr;
 
             HRESULT hresult = source->voice->SubmitSourceBuffer(&source->buffer);
-            if (FAILED(hresult)) {
-                printf("%s() failed to submit source buffer, error = 0x%x\n", __FUNCTION__, hresult);
+            if (FAILED(hresult)) {                
+                char buffer[512];
+                _snprintf_s(buffer, 512, _TRUNCATE, "failed to submit source buffer, error: %d", hresult);
+                critical_error(state, hresult, buffer);
             }
 
             source->voice->Start();

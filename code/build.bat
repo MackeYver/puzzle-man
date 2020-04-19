@@ -117,6 +117,7 @@ IF %errorlevel% NEQ 0 (
 )
 
 REM Move the resulting exe to the run_tree
+IF NOT EXIST ..\run_tree mkdir ..\run_tree
 move puzzle-man.exe ..\run_tree
 
 ECHO All done.

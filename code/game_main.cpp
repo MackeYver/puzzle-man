@@ -914,7 +914,7 @@ b32 init_game(Game *game) {
     {   
         Resources *resources = &game->resources;
 
-        log_str(&game->log, "Loading resources...");
+        log_str(&game->log, "loading resources...");
         
         // bitmaps
         if (result)  result = load_bitmap("data\\bitmaps\\pacman.bmp", &resources->bitmaps.pacman);        
@@ -938,7 +938,7 @@ b32 init_game(Game *game) {
         
         // fonts
         if (result)  result = load_font("data\\fonts", "font", &resources->font);
-        log_str(&game->log, "font loaded");        
+        log_str(&game->log, "font loaded");
     
         // wavs
         if (result)  result = load_wav("data\\audio\\eat_large_dot.wav", &resources->wavs.eat_large_dot);
@@ -952,7 +952,8 @@ b32 init_game(Game *game) {
             LOG_ERROR(&game->log, "failed to load resources, is the data directory present?", 0);
         }
         else {
-            log_str(&game->log, "All resources loaded");
+            log_str(&game->log, "audio loaded");
+            log_str(&game->log, "all resources loaded");
         }        
 
 
@@ -995,8 +996,7 @@ b32 init_game(Game *game) {
     
     //
     // Init game state
-    if (!read_player_profiles_from_disc(game->player_profiles)) {
-        LOG_ERROR(&game->log, "failed to load player profiles", 0);
+    if (!read_player_profiles_from_disc(game->player_profiles)) {        
         _snprintf_s(reinterpret_cast<char *>(&game->player_profiles[0].name), kPlayer_Profile_Name_Max_Length, _TRUNCATE, "Adam");
         _snprintf_s(reinterpret_cast<char *>(&game->player_profiles[1].name), kPlayer_Profile_Name_Max_Length, _TRUNCATE, "Bertil");
         _snprintf_s(reinterpret_cast<char *>(&game->player_profiles[2].name), kPlayer_Profile_Name_Max_Length, _TRUNCATE, "Cesar");

@@ -190,13 +190,13 @@ void draw_bitmap(Render_State *render_state, v2u P, Bmp *bitmap) {
     u32 height = render_state->backbuffer_height;
     
     u32 left_x = P.x <= width  ? width  - P.x : 0;
-    u32 left_y = P.x <= height ? height - P.y : 0;
+    u32 left_y = P.y <= height ? height - P.y : 0;
     
     u32 stop_x = min(static_cast<u32>(bitmap->header.width) , left_x);
     u32 stop_y = min(static_cast<u32>(bitmap->header.height), left_y);
 
     //
-    // Using fixed-point, 0.8
+    // Using fixed-point
     for (u32 y = 0; y < stop_y; ++y) {
         for (u32 x = 0; x < stop_x; ++x) {
             u32 index = (width * (P.y + y)) + P.x + x;

@@ -102,7 +102,7 @@ static void log_str(Log *log, char const *string) {
     }
 
     if (log->print_log || !log) {
-        printf(string);
+        printf("%s\n", string);
     }
 
     if (log->flush_immediately) {
