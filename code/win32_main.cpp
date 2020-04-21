@@ -172,6 +172,8 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
 #include "level.cpp"
 #include "world.cpp"
 
+#include "maps.cpp"
+#include "movement.cpp"
 #include "player_profiles.cpp"
 #include "game_main.cpp"
 

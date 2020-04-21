@@ -159,6 +159,22 @@ Actor *get_pacman(Level *level) {
     return result;
 }
 
+
+void change_pacman_mode(Level *level, Actor_Mode mode) {
+    Actor_Mode other_mode = static_cast<Actor_Mode>(!static_cast<b32>(mode));
+
+    for (u32 index = 0; index < level->actors.count; ++index) {
+        Actor *actor = &level->actors.data[index];
+        if (actor->type == Actor_Type_Pacman) {
+            actor->mode = mode;
+        }
+        else {
+            actor->mode = other_mode;
+        }
+    }
+}
+
+
 Actor *get_actor_at(Level *level, v2u P) {
     Actor *result = nullptr;
 
