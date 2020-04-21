@@ -150,7 +150,7 @@ void save_current_level_state(World *world) {
             assert(0); // Shouldn't happen?
         }
     }
-    else if (next_index == first_index) {
+    else if (next_index == first_index) { // Will we wrap around?
         free_level(get_current_level_state_n(world, first_index));
         first_index = (first_index + 1) < kWorld_Level_States_Count ? first_index + 1 : 0;
     }

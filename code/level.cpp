@@ -259,7 +259,7 @@ enum Level_Token {
     Level_Token_Ghost_Pink,
     Level_Token_Ghost_Cyan,
     Level_Token_Ghost_Orange, 
-   Level_Token_Pacman,
+    Level_Token_Pacman,
 
     Level_Token_Count,
     Level_Token_Unknown,

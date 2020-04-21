@@ -171,6 +171,8 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
 #include "tile_and_item.cpp"
 #include "level.cpp"
 #include "world.cpp"
+
+#include "player_profiles.cpp"
 #include "game_main.cpp"
 
 

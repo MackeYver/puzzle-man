@@ -61,6 +61,7 @@ struct Actor {
     v2u next_position = {};
     Actor_ID id;
     Actor_State state = Actor_State_Idle;
+    Actor_State pending_state = Actor_State_Idle;
     Actor_Mode mode = Actor_Mode_Predator;
     Actor_Type type = Actor_Type_Unknown;
     Direction direction = Direction_Right;
@@ -74,7 +75,6 @@ struct Array_Of_Actors {
     u16 active = 0;
     u16 padding;
 };
-
 
 
 
@@ -104,10 +104,27 @@ b32 copy_actors(Array_Of_Actors *dst, Array_Of_Actors *src) {
                 free(dst->data);
             }
         }
+
+        //
+        // NOTE: we are using the Array_Of_Actors a bit weird maybe; potentially,
+        //       someone, somewhere, keeps an index into this array which lies past
+        //       the count of the array (but definitely not past capacity). Which is
+        //       why we allocate enough memory for the entire thing and not just for
+        //       array->count amount of entries.
+        //
         
-        *dst = *src;        
+        *dst = *src;
         size_t size = sizeof(Actor) * src->capacity;
         dst->data = static_cast<Actor *>(malloc(size));
+
+        #if 0
+        for (u32 index = 0; index < src->capacity; ++index) {
+            Actor *dst_actor = &dst->data[index];
+            *dst_actor = src->data[index];
+            dst_actor->pending_state = dst_actor->state;
+        }
+        result = true;
+        #else
         errno_t error = memcpy_s(dst->data, size, src->data, size);
         if (error != 0) {
             printf("%s() failed to copy actors, error = %d\n", __FUNCTION__, errno);
@@ -115,6 +132,7 @@ b32 copy_actors(Array_Of_Actors *dst, Array_Of_Actors *src) {
         else {
             result = true;
         }
+        #endif
     }
 
     return result;
@@ -192,7 +210,9 @@ Actor *new_actor(Array_Of_Actors *array) {
 
 void delete_actor(Array_Of_Actors *array, Actor_ID delete_id) {
     if (array) {
-        array->data[delete_id.index].state = Actor_State_Dead;
+        Actor *actor = &array->data[delete_id.index];
+        actor->state = Actor_State_Dead;
+        actor->pending_state = actor->state;
         ++array->data[delete_id.index].id.salt;
 
         // If we're deleteing the actor that is last, then we can reduce the count of actors.
@@ -230,6 +250,7 @@ void init_actor(Actor *actor) {
     actor->position = V2u(0, 0);
     actor->next_position = V2u(0, 0);
     actor->state = Actor_State_Idle;
+    actor->pending_state = actor->state;
     actor->mode = Actor_Mode_Predator;
     actor->type = Actor_Type_Unknown;
 }
@@ -238,6 +259,7 @@ void free_actor(Actor *actor) {
     if (actor) {
         actor->position = V2u(0, 0);
         actor->state = Actor_State_Idle;
+        actor->pending_state = actor->state;
         actor->type = Actor_Type_Unknown;
     }
 }
@@ -260,6 +282,16 @@ b32 actor_is_alive(Actor *actor) {
     b32 result = false;
 
     if (actor && (actor->state != Actor_State_Dead && actor->state != Actor_State_At_Deaths_Door)) {
+        result = true;
+    }
+    
+    return result;
+}
+
+b32 actor_will_die(Actor *actor) {
+    b32 result = false;
+
+    if (actor && (actor->pending_state == Actor_State_Dead || actor->pending_state == Actor_State_At_Deaths_Door)) {
         result = true;
     }
     
@@ -355,6 +387,7 @@ void kill_actor(Array_Of_Actors *array, Actor *actor) {
     if (array && actor) {
         delete_actor(array, actor->id);
         actor->state = Actor_State_Dead;
+        actor->pending_state = actor->state;
     }
 }
 
