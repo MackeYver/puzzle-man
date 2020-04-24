@@ -94,7 +94,7 @@ void create_maps_off_level(s32 **maps, Level *level) {
     
     u32 width = level->width;
     u32 height = level->height;
-    Tile *tiles = level->tiles;
+    Tile *tiles = level->current_state->tiles;
     //s32 **maps = world->maps;
     u32 constexpr max_value = 300;
 

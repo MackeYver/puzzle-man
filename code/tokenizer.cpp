@@ -385,7 +385,7 @@ u32 get_u32_from_token(Token *token) {
 }
 
 
-b32 init(Tokenizer *tokenizer, char const *path, char const *name) {
+b32 init_tokenizer(Tokenizer *tokenizer, char const *path, char const *name) {
     b32 result = false;
 
     size_t path_len = strlen(path);

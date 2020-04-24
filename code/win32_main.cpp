@@ -42,6 +42,8 @@
 #include <crtdbg.h>
 #endif
 
+// From: https://stackoverflow.com/questions/8487986/file-macro-shows-full-path, users "Jayesh" and "red1ynx".
+#define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
 
 
 
@@ -170,11 +172,9 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
 #include "actor.cpp"
 #include "tile_and_item.cpp"
 #include "level.cpp"
-#include "world.cpp"
 
 #include "maps.cpp"
 #include "movement.cpp"
-#include "player_profiles.cpp"
 #include "game_main.cpp"
 
 
@@ -211,11 +211,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                     PAINTSTRUCT ps;
                     HDC hdc = BeginPaint(hwnd, &ps);
 
-                    #if 0
+#if 0
                     b32 result = BitBlt(hdc, 0, 0, render_state->backbuffer_width, render_state->backbuffer_height,
                                         render_state->backbuffer_hdc, 0, 0, SRCCOPY);
                     result;
-                    #else                    
+#else                    
                     
                     RECT client_rect;
                     GetClientRect(hwnd, &client_rect);
@@ -266,96 +266,68 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
             Game *game = reinterpret_cast<Game *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
             b32 ctrl_is_down = GetKeyState(VK_CONTROL) & 0x8000;
             b32 shift_is_down = GetKeyState(VK_SHIFT) & 0x8000;
-
-            if (game->state == Game_State_Player_Select_Enter_Name) {
-                if (w_param == VK_ESCAPE) {
-                    game->state = Game_State_Player_Select;
-                }
-                else if (w_param == VK_BACK) {
-                    if (game->input_buffer_curr_pos > 0) {
-                        --game->input_buffer_curr_pos;
-                    }
-                    game->input_buffer[game->input_buffer_curr_pos] = '\0';
-                }
-                else if (w_param == VK_RETURN) {
-                    game->state = Game_State_Player_Select_Enter_Name_Done;
-                }
-                else if ((w_param >= 0x41 && w_param <= 0x5A) || (w_param == VK_SPACE)) {
-                    char curr_char = static_cast<char>(w_param);                    
-                    if (w_param != VK_SPACE && !shift_is_down)  curr_char += 32;
-                    
-                    if (game->input_buffer_curr_pos < (kPlayer_Profile_Name_Max_Length - 1)) {
-                        game->input_buffer[game->input_buffer_curr_pos++] = curr_char;
-                    }
-                    game->input_buffer[game->input_buffer_curr_pos] = '\0';
-               }
-                else {
-                    play_wav(&game->audio_state, &game->resources.wavs.nope);
-                }
+            
+            if (w_param == VK_RIGHT) {
+                game->input = Input_Right;                
             }
-            else {
-                if (w_param == VK_RIGHT) {
-                    game->input = Input_Right;                
-                }
-                else if (w_param == VK_UP) {
-                    game->input = Input_Up;
-                }
-                else if (w_param == VK_LEFT) {
-                    game->input = Input_Left;
-                }
-                else if (w_param == VK_DOWN) {
-                    game->input = Input_Down;
-                }
-                else if (w_param == VK_RETURN) {
-                    game->input = Input_Select;
-                }
-                else if (w_param == VK_ESCAPE) {
-                    game->input = Input_Escape;
-                }
-                else if (w_param == VK_DELETE) {
-                    game->input = Input_Delete;
-                }
-                else if (w_param == 0x52) { // R
-                    reset(game);
-                }
-                else if (w_param == 0x47) { // G
-                    ++game->draw_grid_mode;
-                    game->draw_grid_mode = game->draw_grid_mode > 2 ? 0 : game->draw_grid_mode;
-                }
-                else if (w_param == VK_BACK || (!shift_is_down && ctrl_is_down && w_param == 0x5A)) {
-                    // 0x5A == 'z
-                    undo(game);
-                }
-                else if ((shift_is_down && ctrl_is_down && w_param == 0x5A) || ctrl_is_down && w_param == 0x59) {
-                    // 0x59 == 'y'
-                    redo(game);
-                }
-                else if (w_param == VK_F5) {
-                    // Save
-                    write_player_profiles_to_disc(game->player_profiles);
-                }
-                else if (w_param == VK_F6) {
-                    // Load
-                    read_player_profiles_from_disc(game->player_profiles);
-                }                
-                else if (game->state == Game_State_Lost && w_param == VK_RETURN) {
-                    reset(game);
-                }
-                else if (game->state == Game_State_Won && w_param == VK_RETURN) {
-                    change_to_next_level(game);
-                }            
-                else if (w_param == VK_F1) { // DEBUG
-                    change_to_prev_level(game);
-                }
-                else if (w_param == VK_F2) { // DEBUG
-                    change_to_next_level(game);
-                }
-                else if (w_param == VK_F3) { // DEBUG
-                    game->current_map_index = game->current_map_index == 0 ? Map_Count : game->current_map_index - 1;
-                }
-                else if (w_param == VK_F4) { // DEBUG
-                    game->current_map_index = (game->current_map_index + 1) % (Map_Count + 1);
-                }
+            else if (w_param == VK_UP) {
+                game->input = Input_Up;
+            }
+            else if (w_param == VK_LEFT) {
+                game->input = Input_Left;
+            }
+            else if (w_param == VK_DOWN) {
+                game->input = Input_Down;
+            }
+            else if (w_param == VK_RETURN) {
+                game->input = Input_Select;
+            }
+            else if (w_param == VK_ESCAPE) {
+                game->input = Input_Escape;
+            }
+            else if (w_param == VK_DELETE) {
+                game->input = Input_Delete;
+            }
+            else if (w_param == 0x52) { // R
+                reset(game);
+            }
+            else if (w_param == 0x47) { // G
+                ++game->draw_grid_mode;
+                game->draw_grid_mode = game->draw_grid_mode > 2 ? 0 : game->draw_grid_mode;
+            }
+            else if (w_param == VK_BACK || (!shift_is_down && ctrl_is_down && w_param == 0x5A)) {
+                // 0x5A == 'z
+                undo(game);
+            }
+            else if ((shift_is_down && ctrl_is_down && w_param == 0x5A) || ctrl_is_down && w_param == 0x59) {
+                // 0x59 == 'y'
+                redo(game);
+            }
+            else if (w_param == VK_F5) {
+                // Save
+                //write_player_profiles_to_disc(game->player_profiles);
+            }
+            else if (w_param == VK_F6) {
+                // Load
+                //read_player_profiles_from_disc(game->player_profiles);
+            }                
+            else if (game->state == Game_State_Lost && w_param == VK_RETURN) {
+                reset(game);
+            }
+            else if (game->state == Game_State_Won && w_param == VK_RETURN) {
+                change_to_next_level(game);
+            }            
+            else if (w_param == VK_F1) { // DEBUG
+                change_to_prev_level(game);
+            }
+            else if (w_param == VK_F2) { // DEBUG
+                change_to_next_level(game);
+            }
+            else if (w_param == VK_F3) { // DEBUG
+                game->current_map_index = game->current_map_index == 0 ? Map_Count : game->current_map_index - 1;
+            }
+            else if (w_param == VK_F4) { // DEBUG
+                game->current_map_index = (game->current_map_index + 1) % (Map_Count + 1);
             }
         } break;
     }
@@ -370,7 +342,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     open_log(&game.log);
     
     wchar_t const *class_name = L"puzzle-man";
-
+    u32 error_code = 0;
 
     
     //
@@ -411,75 +383,81 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         if (result == 0) {
             u32 error = GetLastError();
             LOG_ERROR(&game.log, "failed to register WNDCLASSEX", error);
-            return -1;
+            error_code = 1;
         }
         
         //
         // Create window
-        DWORD window_style = WS_CAPTION | WS_SYSMENU | WS_SIZEBOX;
-        AdjustWindowRectEx(&client_rect, window_style, false, 0);
-        game.window_width = client_rect.right - client_rect.left;
-        game.window_height = client_rect.bottom - client_rect.top;
+        if (error_code == 0) {
+            DWORD window_style = WS_CAPTION | WS_SYSMENU | WS_SIZEBOX;
+            AdjustWindowRectEx(&client_rect, window_style, false, 0);
+            game.window_width = client_rect.right - client_rect.left;
+            game.window_height = client_rect.bottom - client_rect.top;
         
-        hwnd = CreateWindowEx(0,
-                              class_name,
-                              class_name,
-                              window_style,
-                              1800,//CW_USEDEFAULT, // DEBUG
-                              500,//CW_USEDEFAULT,
-                              game.window_width,
-                              game.window_height,
-                              nullptr,
-                              nullptr,
-                              Instance,
-                              &game);
-        if (hwnd == 0) {
-            int error = GetLastError();
-            LOG_ERROR(&game.log, "failed to create the window", error);
-            return -2;
+            hwnd = CreateWindowEx(0,
+                                  class_name,
+                                  class_name,
+                                  window_style,
+                                  1800,//CW_USEDEFAULT, // DEBUG
+                                  500,//CW_USEDEFAULT,
+                                  game.window_width,
+                                  game.window_height,
+                                  nullptr,
+                                  nullptr,
+                                  Instance,
+                                  &game);
+            if (hwnd == 0) {
+                int error = GetLastError();
+                LOG_ERROR(&game.log, "failed to create the window", error);
+                error_code = 2;
+            }
         }
-    }
 
-    ShowWindow(hwnd, CmdShow);
-    UpdateWindow(hwnd);
-    log_str(&game.log, "win32 initialized");
+        ShowWindow(hwnd, CmdShow);
+        UpdateWindow(hwnd);
+        log_str(&game.log, "win32 initialized");
+    }
 
 
     
     //
     // Init renderer and audio
+    if (error_code == 0)
     {
         b32 result = init_renderer(&game.render_state, &game.log, hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
         if (!result) {            
             LOG_ERROR(&game.log, "failed to initialize the software renderer", result);
-            return result;
+            error_code = 3;
         }
-        log_str(&game.log, "Software renderer initialized");
+        else {
+            log_str(&game.log, "Software renderer initialized");
             
-        result = init_audio(&game.audio_state, &game.log);
-        if (!result) {
-            //printf("Error, failed to initialize the audio system\n");
-            LOG_ERROR(&game.log, "failed to initialize the audio system", result);            
-            return -1;
+            result = init_audio(&game.audio_state, &game.log);
+            if (!result) {
+                //printf("Error, failed to initialize the audio system\n");
+                LOG_ERROR(&game.log, "failed to initialize the audio system", result);
+                error_code = 4;
+            }
+            else {
+                log_str(&game.log, "XAudio2 initilized");
+            }
         }
-        log_str(&game.log, "XAudio2 initilized");
     }
     
 
     
     //
     // Init game
+    if (error_code == 0)
     {        
         if (init_game(&game)) {
             log_str(&game.log, "Game initilized");
         }
-        else {
-            LOG_ERROR_STR(&game.log, "failed to initialized game", 0);
+        else {            
+            LOG_ERROR(&game.log, "failed to initialized game", 0);
+            error_code = 5;
         }
     }
-
-
-    log_str(&game.log, "All initializations completed, starting game...");
     
     
     //
@@ -494,7 +472,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 #endif
 
     MSG msg = {};
-    b32 running = true;
+    b32 running = error_code == 0;
     while (running) {
         QueryPerformanceCounter(&frame_start_time);
 
@@ -546,34 +524,9 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         ++frame_counter;
         accumulated_frame_time += static_cast<u32>(elapsed_time.QuadPart);
         if (accumulated_frame_time >= 1000000) {
-            printf("--------------------------------------\n%d fps\n\n", frame_counter);
+            printf("FPS: %u\n", frame_counter);
             frame_counter = 0;
             accumulated_frame_time = 0;
-
-            metrics = game.metrics;
-            metrics.total.QuadPart *= 1000000;
-            metrics.total.QuadPart /= frequency.QuadPart;
-            metrics.draw_tiles.QuadPart *= 1000000;
-            metrics.draw_tiles.QuadPart /= frequency.QuadPart;
-            metrics.draw_actors.QuadPart *= 1000000;
-            metrics.draw_actors.QuadPart /= frequency.QuadPart;
-
-            printf("TOTAL\n");
-            printf(" Total =          %10lld\n    draw_tiles =  %10lld (%5.1f%%)\n    draw_actors = %10lld (%5.1f%%)\n\n",
-                   metrics.total.QuadPart,
-                   metrics.draw_tiles.QuadPart, 100.0f * ((f32)metrics.draw_tiles.QuadPart   / (f32)metrics.total.QuadPart),
-                   metrics.draw_actors.QuadPart, 100.0f * ((f32)metrics.draw_actors.QuadPart / (f32)metrics.total.QuadPart));
-
-
-            f32 total = (f32)metrics.total.QuadPart / (f32)metrics.count;
-            f32 dt = (f32)metrics.draw_tiles.QuadPart / (f32)metrics.count;
-            f32 da = (f32)metrics.draw_actors.QuadPart / (f32)metrics.count;;
-            
-            printf("AVERAGE\n");
-            printf(" Total =          %7.1f\n    draw_tiles =  %7.1f (%5.1f%%)\n    draw_actors = %7.1f (%5.1f%%)\n\n",
-                   total,
-                   dt, 100.0f * dt / total,
-                   da, 100.0f * da / total);
         }
 #endif
     }   
@@ -594,5 +547,5 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 
     close_log(&game.log);
    
-    return 0;
+    return error_code;
 }

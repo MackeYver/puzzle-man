@@ -1,50 +1,257 @@
 //
-// Declaration
+// Declarations
 //
 
-struct Level {
-    char name[kLevel_Name_Max_Length] = {'\0'};
-    Tile *tiles = nullptr;
-    
-    Resources *resources;
+struct Level_State {
     Array_Of_Actors actors;
-    Actor_ID pacman_id = {0xFFFF, 0xFFFF};
-    u32 width = 0;
-    u32 height = 0;
-    u16 score = 0;
-    u16 mode_duration = 0;
+    Tile *tiles = nullptr;
+    u32 tile_count = 0;
+
+    u16 score           = 0;
+    u16 mode_duration   = 0;
     u16 large_dot_count = 0;
     u16 small_dot_count = 0;
-    u16 ghost_count = 0;
-    u16 pacman_count = 0;
+    u16 ghost_count     = 0;
+    u16 pacman_count    = 0;
+};
+
+
+
+#define kLevel_States_Count 100
+
+struct Level {
+    Level_State states[kLevel_States_Count];
+    Level_State *current_state = nullptr;
+    u32 first_valid_state_index = 0;
+    u32 last_valid_state_index = 0;
+    u32 current_state_index = 0;
+    
+    char name[kLevel_Name_Max_Length] = {'\0'};    
+    
+    Resources *resources;
+    
+    Actor_ID pacman_id = {0xFFFF, 0xFFFF};
+    
+    u32 width = 0;
+    u32 height = 0;
 };
 
 
 
 
 //
-// Implementation
+// Implementation, Level state
 //
 
-void free_level(Level *level) {
-    if (level) {
-        if (level->tiles) {
-            free(level->tiles);
-            level->tiles = nullptr;
+void free_level_state(Level_State *state) {
+    if (state) {
+        if (state->tiles) {
+            free(state->tiles);
+            state->tiles = nullptr;
+            state->tile_count = 0;
         }
 
-        // for (u32 index = 0; index < level->actor_count; ++index) {
-        //     Actor *actor = &level->actors[index];
-        //     free_actor(actor);
-        // }
-        free_array_of_actors(&level->actors);
+        free_array_of_actors(&state->actors);
+
+        state->score           = 0;        
+        state->mode_duration   = 0;
+        state->large_dot_count = 0;
+        state->small_dot_count = 0;
+        state->ghost_count     = 0;
+        state->pacman_count    = 0;
+    }
+}
+
+void free_all_level_states(Level *level) {
+    for (u32 index = 0; index < kLevel_States_Count; ++index) {
+        free_level_state(&level->states[index]);
+    }
+    
+    level->current_state_index = 0;
+    level->first_valid_state_index = 0;
+    level->last_valid_state_index = 0;
+    level->current_state = nullptr;
+}
+
+b32 is_valid_level_state_index(Level *level, u32 n) {
+    b32 result = false;
+
+    if (level && n < kLevel_States_Count) {
+        u32 first_index = level->first_valid_state_index;
+        u32 last_index  = level->last_valid_state_index;
+        
+        if (first_index <= last_index) {
+            result = n >= first_index && n <= last_index;
+        }
+        else if (last_index < first_index) {
+            result = !(n > last_index && n < first_index);
+        }
+    }
+
+    return result;
+}
+
+
+Level_State *get_level_state_n(Level *level, u32 n) {
+    Level_State *result = nullptr;
+
+    if (level && is_valid_level_state_index(level, n)) {
+        result = &level->states[n];
+    }
+
+    return result;
+}
+
+
+Level_State *get_current_level_state(Level *level) {
+    Level_State *result = get_level_state_n(level, level->current_state_index);
+    level->current_state = result;
+    return result;
+}
+
+
+u32 get_first_level_state_index(Level *level) {
+    u32 result = level->first_valid_state_index;
+    return result;
+}
+
+u32 get_prev_valid_level_state_index(Level *level) {
+    u32 result = level->current_state_index;
+
+    if (level) {
+        u32 curr_index = level->current_state_index;
+        u32 prev_index = curr_index == 0 ? prev_index = (kLevel_States_Count - 1) : curr_index - 1;
+
+        if (is_valid_level_state_index(level, prev_index)) {
+            result = prev_index;
+        }
+    }
+
+    return result;
+}
+
+u32 get_next_valid_level_state_index(Level *level) {
+    u32 result = level->current_state_index;
+
+    if (level) {
+        u32 curr_index = level->current_state_index;
+        u32 next_index = curr_index < (kLevel_States_Count - 1) ? curr_index + 1 : 0;
+
+        if (is_valid_level_state_index(level, next_index)) {
+            result = next_index;
+        }
+    }
+
+    return result;
+}
+
+
+b32 copy_level_state(Level_State *dst, Level_State *src) {
+    b32 result = false;
+    
+    if (dst && src) {
+        dst->score = src->score;
+        dst->mode_duration = src->mode_duration;
+        dst->large_dot_count = src->large_dot_count;
+        dst->small_dot_count = src->small_dot_count;
+        dst->ghost_count = src->ghost_count;
+        dst->pacman_count = src->pacman_count;
+        dst->tile_count = src->tile_count;
+        
+        // tiles
+        if (dst->tiles)  free(dst->tiles);
+        size_t size = src->tile_count * sizeof(Tile);
+        dst->tiles = static_cast<Tile *>(calloc(1, size));
+        errno_t error = memcpy_s(dst->tiles, size, src->tiles, size);
+        if (error != 0) {
+            printf("%s() failed to copy tiles from %p to %p, error = %d\n", __FUNCTION__, src, dst, errno);
+            return false;
+        }
+        else {
+            result = true;
+        }
+
+        // actors
+        b32 b32_result = copy_actors(&dst->actors, &src->actors);
+        if (result && !b32_result) {
+            printf("%s() failed to copy actors from %p to %p, error = %d\n", __FUNCTION__, src, dst, errno);
+            result = false;
+        }
+    }
+
+    return result;
+}
+
+
+void save_current_level_state(Level *level) {
+    // We assume that:
+    //   first_index, last_index, current_index < kWorld_Level_States_Count
+    //   current_index >= first_index && current_index <= last_index
+    //
+
+    u32 first_index = level->first_valid_state_index;
+    u32 last_index  = level->last_valid_state_index;
+    u32 curr_index  = level->current_state_index;
+    u32 next_index = (curr_index + 1) < kLevel_States_Count ? curr_index + 1 : 0;
+
+    // Free levels
+    // We're adding a new level state in between older states, we need to free the states after the new one.
+    if (curr_index != last_index) {
+        if (curr_index < last_index) {            
+            for (u32 index = curr_index + 1; index <= last_index; ++index) {
+                free_level_state(&level->states[index]);
+            }
+            last_index = curr_index;
+        }
+        else if (curr_index > last_index) {
+            for (u32 index = curr_index + 1; index < kLevel_States_Count; ++index) {
+                free_level_state(&level->states[index]);
+            }
+            for (u32 index = 0; index <= last_index; ++index) {
+                free_level_state(&level->states[index]);
+            }
+            last_index = curr_index;
+        }
+        else {
+            assert(0); // Shouldn't happen?
+        }
+    }
+    else if (next_index == first_index) { // Will we wrap around?
+        free_level_state(get_level_state_n(level, first_index));
+        first_index = (first_index + 1) < kLevel_States_Count ? first_index + 1 : 0;
+    }
+
+    printf("copy %d to %d\n", curr_index, next_index);
+
+    Level_State *curr_level_state = &level->states[curr_index];
+    Level_State *next_level_state = &level->states[next_index];
+    copy_level_state(next_level_state, curr_level_state);
+    
+    level->current_state_index = next_index;
+    level->current_state = next_level_state;
+    level->first_valid_state_index = first_index;
+    level->last_valid_state_index = level->current_state_index;
+}
+
+
+
+
+//
+// Level
+//
+
+void fini_level(Level *level) {
+    if (level) {
+        free_all_level_states(level);
+
+        level->first_valid_state_index = 0;
+        level->last_valid_state_index = 0;
+        level->current_state_index = 0;
+        level->current_state = nullptr;
         
         level->width = 0;
         level->height = 0;
         level->name[0] = '\0';
-        level->score = 0;
-        level->ghost_count = 0;
-        level->pacman_count = 0;
         level->pacman_id.index = 0xFFFF;
         level->pacman_id.salt = 0xFFFF;
     }
@@ -52,63 +259,28 @@ void free_level(Level *level) {
 
 
 void init_level(Level *level, Resources *resources) {
-    free_level(level);
+    fini_level(level);
+    
     level->resources = resources;
     level->pacman_id.index = 0xFFFF;
     level->pacman_id.salt = 0xFFFF;
-}
-
-
-b32 copy_level(Level *dst, Level *src) {
-    b32 result = false;
     
-    if (dst && src) {
-        dst->width = src->width;
-        dst->height = src->height;
-        dst->resources = src->resources;
-        dst->score = src->score;
-        dst->ghost_count = src->ghost_count;
-        dst->pacman_count = src->pacman_count;
-        dst->pacman_id = src->pacman_id;
-        dst->mode_duration = src->mode_duration;
-        dst->large_dot_count = src->large_dot_count;
-        dst->small_dot_count = src->small_dot_count;
-        
-        // name
-        errno_t error = memcpy_s(dst->name, kLevel_Name_Max_Length, src->name, kLevel_Name_Max_Length);
-        if (error != 0) {
-            printf("%s() failed to copy the name of the level named \'%s\', error = %d\n", __FUNCTION__, src->name, errno);
-            return false;
-        }
-
-        // tiles
-        size_t size = dst->width * dst->height * sizeof(Tile);
-        dst->tiles = static_cast<Tile *>(malloc(size));
-        error = memcpy_s(dst->tiles, size, src->tiles, size);
-        if (error != 0) {
-            printf("%s() failed to copy the tiles from the level with with name \'%s\', error = %d\n", __FUNCTION__, src->name, errno);
-            return false;
-        }        
-
-        // actors
-        b32 b32_result = copy_actors(&dst->actors, &src->actors);
-        if (result && !b32_result) {
-            printf("%s() failed to copy the level with with name \'%s\', error = %d\n", __FUNCTION__, src->name, errno);
-            return false;
-        }
-
-        result = true;
-    }
-
-    return result;
+    level->current_state_index = get_first_level_state_index(level);
+    level->current_state = get_level_state_n(level, level->current_state_index);
 }
 
+
+
+
+//
+// Queries
+//
 
 Tile *get_tile_at(Level *level, v2u P) {
-    Tile *result = nullptr;
+    Tile *result = nullptr;    
     
-    if (level->tiles && P.x < level->width && P.y < level->height) {
-        result = &level->tiles[(level->width * P.y) + P.x];
+    if (P.x < level->width && P.y < level->height) {
+        result = &level->current_state->tiles[(level->width * P.y) + P.x];
     }
 
     return result;
@@ -139,7 +311,7 @@ b32 move_is_possible(Level *level, Actor *actor, v2s dP) {
     v2s next_pos = actor->position + dP;
 
     if (next_pos.x >= 0 && next_pos.x < width && next_pos.y >= 0 && next_pos.y < height) {
-        Tile *tile = &level->tiles[(width * next_pos.y) + next_pos.x];
+        Tile *tile = &level->current_state->tiles[(width * next_pos.y) + next_pos.x];
         if (tile_is_traversable(tile)) {
             result = true;
         }
@@ -151,36 +323,17 @@ b32 move_is_possible(Level *level, Actor *actor, v2s dP) {
 
 Actor *get_pacman(Level *level) {
     Actor *result = nullptr;
-
-    if (level) {
-        result = get_actor(&level->actors, level->pacman_id);
-    }
+    result = get_actor(&level->current_state->actors, level->pacman_id);
 
     return result;
 }
-
-
-void change_pacman_mode(Level *level, Actor_Mode mode) {
-    Actor_Mode other_mode = static_cast<Actor_Mode>(!static_cast<b32>(mode));
-
-    for (u32 index = 0; index < level->actors.count; ++index) {
-        Actor *actor = &level->actors.data[index];
-        if (actor->type == Actor_Type_Pacman) {
-            actor->mode = mode;
-        }
-        else {
-            actor->mode = other_mode;
-        }
-    }
-}
-
 
 Actor *get_actor_at(Level *level, v2u P) {
     Actor *result = nullptr;
 
     Tile *tile = get_tile_at(level, P);
     if (tile) {
-        result = get_actor(&level->actors, tile->actor_id);
+        result = get_actor(&level->current_state->actors, tile->actor_id);
     }
 
     return result;
@@ -192,30 +345,59 @@ inline Actor *get_actor_at(Level *level, u32 x, u32 y) {
 }
 
 
-void kill_actor(Level *level, Actor *actor) {
-    if (level && actor) {
-        Tile *tile = get_tile_at(level, actor->position);
-        if (tile->actor_id == actor->id) {
-            tile->actor_id = kActor_ID_Null;
+
+
+//
+// Change level state
+//
+
+void change_pacman_mode(Level *level, Actor_Mode mode) {
+    Actor_Mode other_mode = static_cast<Actor_Mode>(!static_cast<b32>(mode));    
+
+    Level_State *state = level->current_state;
+    for (u32 index = 0; index < state->actors.count; ++index) {
+        Actor *actor = &state->actors.data[index];
+        if (actor->type == Actor_Type_Pacman) {
+            actor->mode = mode;
         }
-        
-        kill_actor(&level->actors, actor);
-        
-        if (actor_is_ghost(actor)) {
-            level->score -= kGhost_Value;
-            --level->ghost_count;
-        }
-        else if (actor->type == Actor_Type_Pacman) {
-            --level->pacman_count;
+        else {
+            actor->mode = other_mode;
         }
     }
 }
 
 
+void kill_actor(Level *level, Actor *actor) {    
+    Tile *tile = get_tile_at(level, actor->position);
+    if (tile) {
+        if (tile->actor_id == actor->id) {
+            tile->actor_id = kActor_ID_Null;
+        }
+    }
+
+    Level_State *state = level->current_state;
+    kill_actor(&state->actors, actor);
+        
+    if (actor_is_ghost(actor)) {
+        state->score -= kGhost_Value;
+        --state->ghost_count;
+    }
+    else if (actor->type == Actor_Type_Pacman) {
+        --state->pacman_count;
+    }
+}
+
+
+
+
+//
+// Rendering
+//
+
 void draw_current_level(Render_State *render_state, Level *level, u32 microseconds_since_start) {
     Font *font = &level->resources->font;    
     u32 width = level->width;
-    u32 height = level->height;
+    u32 height = level->height;    
     
     //
     // Draw all tiles
@@ -229,12 +411,20 @@ void draw_current_level(Render_State *render_state, Level *level, u32 microsecon
     
     //
     // Draw all actors
+    Level_State *state = level->current_state;
     Actor *pacman = get_pacman(level);
-    for (u32 index = 0; index < level->actors.count; ++index) {
-        Actor *actor = &level->actors.data[index];
+
+    // Timings for ghost animation
+    f32 constexpr k = 1.0f / 1000000.0f;
+    f32 t = static_cast<f32>(microseconds_since_start) * k;
+    f32 x_offset = 0.0f;//sinf(3.6f*t);
+    f32 y_offset = 3.0f*cosf(1.8f*t);
+    
+    for (u32 index = 0; index < state->actors.count; ++index) {
+        Actor *actor = &state->actors.data[index];
         if (actor_is_alive(actor)) {
             if (actor_is_ghost(actor)) {
-                draw_ghost(render_state, level->resources, actor, pacman, microseconds_since_start);
+                draw_ghost(render_state, level->resources, actor, pacman, x_offset, y_offset);
             }
             else if (actor->type == Actor_Type_Pacman) {
                 draw_pacman(render_state, level->resources, actor, microseconds_since_start);
@@ -247,7 +437,7 @@ void draw_current_level(Render_State *render_state, Level *level, u32 microsecon
     // Score
     {
         char text[50];
-        _snprintf_s(text, 50, _TRUNCATE, "Level %s, score %u", level->name, level->score);
+        _snprintf_s(text, 50, _TRUNCATE, "Level %s, score %u", level->name, state->score);
         print(render_state, font, V2u(10, 10), text);
     }
 }
@@ -383,9 +573,11 @@ b32 add_actor(Tokenizer *tokenizer, Level *level, u32 x, u32 y, Actor_Type actor
         printf("%s() got an invalid actor type (%u)\n", __FUNCTION__, actor_type);
         return false;
     }
+
+    Level_State *state = level->current_state;
     
     u32 reversed_y = level->height - 1 - y;
-    Actor *curr_actor = new_actor(&level->actors);
+    Actor *curr_actor = new_actor(&state->actors);
     assert(curr_actor);
     curr_actor->position = V2u(x, reversed_y);
     curr_actor->type = actor_type;
@@ -396,18 +588,18 @@ b32 add_actor(Tokenizer *tokenizer, Level *level, u32 x, u32 y, Actor_Type actor
     // Ghost
     if (actor_type < Actor_Type_Pacman) {
         curr_actor->mode = Actor_Mode_Predator;
-        level->score += kGhost_Value;
-        ++level->ghost_count;
+        state->score += kGhost_Value;
+        ++state->ghost_count;
     }
 
     
     //
     // Pacman
     else if (actor_type == Actor_Type_Pacman) {            
-        if (level->pacman_count == 0) {
+        if (state->pacman_count == 0) {
             curr_actor->mode = Actor_Mode_Prey;
             level->pacman_id = curr_actor->id;
-            ++level->pacman_count;
+            ++state->pacman_count;
         }
         else {
             tokenizer->error = true;
@@ -421,7 +613,7 @@ b32 add_actor(Tokenizer *tokenizer, Level *level, u32 x, u32 y, Actor_Type actor
     //
     // Tile beneath the actor
     u32 curr_tile_index = (level->width * reversed_y) + x;
-    Tile *curr_tile = &level->tiles[curr_tile_index];
+    Tile *curr_tile = &state->tiles[curr_tile_index];
     curr_tile->type = Tile_Type_Floor;
     curr_tile->item.type = Item_Type_None;
     curr_tile->actor_id = curr_actor->id;
@@ -432,13 +624,14 @@ b32 add_actor(Tokenizer *tokenizer, Level *level, u32 x, u32 y, Actor_Type actor
 
 b32 parse_level(Tokenizer *tokenizer, Level *level) {
     assert(tokenizer);
-    assert(level);
+    assert(level);    
 
     b32 result = parse_level_header(tokenizer, level);
     if (result) {
-        u32 level_size = level->width * level->height;
-        level->tiles = static_cast<Tile *>(calloc(1, level_size * sizeof(Tile)));
-        assert(level->tiles);
+        Level_State *state = level->current_state;
+        state->tile_count = level->width * level->height;
+        state->tiles = static_cast<Tile *>(calloc(state->tile_count, sizeof(Tile)));
+        assert(state->tiles);
 
         u32 x = 0;
         u32 y = 0;
@@ -450,7 +643,7 @@ b32 parse_level(Tokenizer *tokenizer, Level *level) {
         b32 should_loop = true;
         while (y < level->height && should_loop) {
             u32 tile_index = (level->width * (level->height - 1 - y)) + x;
-            Tile *curr_tile = &level->tiles[tile_index];
+            Tile *curr_tile = &state->tiles[tile_index];
             b32 should_advance = true;
 
             
@@ -481,8 +674,8 @@ b32 parse_level(Tokenizer *tokenizer, Level *level) {
                     
                 case Level_Token_Dot_Small: {
                     curr_tile->type = Tile_Type_Floor;
-                    level->score += kDot_Small_Value;
-                    ++level->small_dot_count;
+                    state->score += kDot_Small_Value;
+                    ++state->small_dot_count;
                     curr_tile->item.type = Item_Type_Dot_Small;
                     curr_tile->item.value = kDot_Small_Value;
                     curr_tile->actor_id = kActor_ID_Null;
@@ -490,8 +683,8 @@ b32 parse_level(Tokenizer *tokenizer, Level *level) {
                     
                 case Level_Token_Dot_Large: {
                     curr_tile->type = Tile_Type_Floor;
-                    level->score += kDot_Large_Value;
-                    ++level->large_dot_count;
+                    state->score += kDot_Large_Value;
+                    ++state->large_dot_count;
                     curr_tile->item.type = Item_Type_Dot_Large;
                     curr_tile->item.value = kDot_Large_Value;
                     curr_tile->actor_id = kActor_ID_Null;
@@ -552,34 +745,55 @@ void adjust_walls_in_level(Level *level, Resources *resources) {
             u32 curr_index = (level->width * y) + x;
             u32 sum = 0;
 
-            if (tile_has_wall(&level->tiles[curr_index])) {
+            Level_State *state = level->current_state;
+            if (tile_has_wall(&state->tiles[curr_index])) {
                 if (x < (level->width - 1)) {
                     u32 right_index = (level->width * y) + x + 1;
-                    if (tile_has_wall(&level->tiles[right_index])) {
+                    if (tile_has_wall(&state->tiles[right_index])) {
                         sum += 1;
                     }
                 }
                 if (y < (level->height - 1)) {
                     u32 up_index = (level->width * (y + 1)) + x;
-                    if (tile_has_wall(&level->tiles[up_index])) {
+                    if (tile_has_wall(&state->tiles[up_index])) {
                         sum += 2;
                     }
                 }
                 if (x > 0) {
                     u32 left_index = (level->width * y) + x - 1;
-                    if (tile_has_wall(&level->tiles[left_index])) {
+                    if (tile_has_wall(&state->tiles[left_index])) {
                         sum += 4;
                     }
                 }
                 if (y > 0) {
                     u32 down_index = (level->width * (y - 1)) + x;
-                    if (tile_has_wall(&level->tiles[down_index])) {
+                    if (tile_has_wall(&state->tiles[down_index])) {
                         sum += 8;
                     }
                 }
 
-                level->tiles[curr_index].type = static_cast<Tile_Type>(sum);
+                state->tiles[curr_index].type = static_cast<Tile_Type>(sum);
             }
         }
     }
+}
+
+
+b32 load_level_from_disc(Level *level, Resources *resources, char const *filename) {
+    fini_level(level);
+    init_level(level, resources);
+
+    Tokenizer tokenizer;
+    b32 result = init_tokenizer(&tokenizer, "data\\levels\\", filename);    
+    if (result) {
+        result = parse_level(&tokenizer, level);
+        if (!result) {
+            fini_level(level);
+        }
+        else {
+            adjust_walls_in_level(level, resources);
+        }
+    }
+
+    return result;
 }

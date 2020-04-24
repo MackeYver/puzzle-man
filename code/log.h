@@ -24,8 +24,8 @@ static void log_str(Log *log, char const *string);
 static void log_current_time(Log *log);
 static void close_log(Log *log);
 
-#define LOG_ERROR(log, string, error_value)   log_error(log, string, error_value, __FILE__, __FUNCTION__, __LINE__)
-#define LOG_ERROR_STR(log, string, error_str) log_error_str(log, string, error_str, __FILE__, __FUNCTION__, __LINE__)
+#define LOG_ERROR(log, string, error_value)   log_error(log, string, error_value, __FILENAME__, __FUNCTION__, __LINE__)
+#define LOG_ERROR_STR(log, string, error_str) log_error_str(log, string, error_str, __FILENAME__, __FUNCTION__, __LINE__)
 
 
 

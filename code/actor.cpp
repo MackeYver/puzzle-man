@@ -114,8 +114,9 @@ b32 copy_actors(Array_Of_Actors *dst, Array_Of_Actors *src) {
         //
         
         *dst = *src;
-        size_t size = sizeof(Actor) * src->capacity;
-        dst->data = static_cast<Actor *>(malloc(size));
+        size_t size = src->capacity * sizeof(Actor);
+        dst->data = static_cast<Actor *>(calloc(1, size));
+        assert(dst->data);
 
         #if 0
         for (u32 index = 0; index < src->capacity; ++index) {
@@ -319,44 +320,49 @@ b32 actor_is_prey(Actor *actor) {
 }
 
 
-void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, Actor *pacman, u32 int_t) {  
-    Bmp *bitmap = nullptr;
+void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, Actor *pacman, f32 cos_x, f32 sin_y) {  
+    Bmp *ghost_bitmap = nullptr;    
+        
     if (actor->mode == Actor_Mode_Prey) {
-        bitmap = &resources->bitmaps.ghost_as_prey;
+        ghost_bitmap = &resources->bitmaps.ghost_as_prey;        
     }
     else {
         switch (actor->type) {
-            case Actor_Type_Ghost_Red:    { bitmap = &resources->bitmaps.ghost_red;    } break;
-            case Actor_Type_Ghost_Pink:   { bitmap = &resources->bitmaps.ghost_pink;   } break;
-            case Actor_Type_Ghost_Cyan:   { bitmap = &resources->bitmaps.ghost_cyan;   } break;
-            case Actor_Type_Ghost_Orange: { bitmap = &resources->bitmaps.ghost_orange; } break;
+            case Actor_Type_Ghost_Red:    { ghost_bitmap = &resources->bitmaps.ghost_red;    } break;
+            case Actor_Type_Ghost_Pink:   { ghost_bitmap = &resources->bitmaps.ghost_pink;   } break;
+            case Actor_Type_Ghost_Cyan:   { ghost_bitmap = &resources->bitmaps.ghost_cyan;   } break;
+            case Actor_Type_Ghost_Orange: { ghost_bitmap = &resources->bitmaps.ghost_orange; } break;
         }
     }
 
     v2u Po = V2u(kCell_Size * actor->position.x, kCell_Size * actor->position.y);
     v2u P = Po;
-    {
-        f32 Pax = static_cast<f32>(Po.x);
-        f32 Pay = static_cast<f32>(Po.y);
+    //#if 0
+    u32 x_off = 0;
+    u32 y_off = 0;
+    f32 Pax = static_cast<f32>(Po.x);
+    f32 Pay = static_cast<f32>(Po.y);
+    {        
+        Pax += cos_x;
+        Pay += sin_y;
+        
+        if (Pax < 0.0f || Pay < 0.0f) {
+            P = V2u(static_cast<u32>(max(0.0f, Pax)), static_cast<u32>(max(0.0f, Pay)));
+            x_off = Pax < 0.0f ? static_cast<u32>(ceilf(-1.0f * Pax)) : 0;
+            y_off = Pay < 0.0f ? static_cast<u32>(ceilf(-1.0f * Pay)) : 0;
 
-        f32 constexpr k = 1.0f / 1000000.0f;
-        //f32 constexpr k2 = 1.0f / 3.0f;
-        //f32 constexpr f32_tau = 6.28318530f;
-        f32 t = static_cast<f32>(int_t) * k;
-    
-        f32 x = 0.0f;//sinf(3.6f*t);
-        f32 y = 3.0f*cosf(1.8f*t);
-        Pax += x;
-        Pay += y;
-        P = V2u(static_cast<u32>(Pax), static_cast<u32>(Pay));
-
-        draw_bitmap(render_state, P, bitmap);
-        draw_bitmap(render_state, P, &resources->bitmaps.ghost_eye);
+            draw_bitmap(render_state, P, ghost_bitmap, x_off, y_off, ghost_bitmap->header.width, ghost_bitmap->header.height);
+            Bmp *eye_bitmap = &resources->bitmaps.ghost_eye;
+            draw_bitmap(render_state, P, eye_bitmap, x_off, y_off, eye_bitmap->header.width, eye_bitmap->header.height);
+        }
+        else {
+            P = V2u(static_cast<u32>(Pax), static_cast<u32>(Pay));
+            draw_bitmap(render_state, P, ghost_bitmap);
+            draw_bitmap(render_state, P, &resources->bitmaps.ghost_eye);
+        }
     }
-    
+                
     if (actor_is_alive(pacman) && actor_is_alive(actor)) {
-        f32 Pax = static_cast<f32>(Po.x);
-        f32 Pay = static_cast<f32>(Po.y);
         f32 Ppx = static_cast<f32>(kCell_Size * pacman->position.x);
         f32 Ppy = static_cast<f32>(kCell_Size * pacman->position.y);
 
@@ -370,15 +376,11 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
             dx *= 3;
             dy *= 4;
 
-            f32 Px = static_cast<f32>(P.x) + dx;
-            f32 Py = static_cast<f32>(P.y) + dy;
-
-            assert(Px >= 0);
-            assert(Py >= 0);
-
+            f32 Px = max(0.0f, static_cast<f32>(P.x) + dx - x_off);
+            f32 Py = max(0.0f, static_cast<f32>(P.y) + dy - y_off);
             P = V2u(static_cast<u32>(Px), static_cast<u32>(Py));
         }
-    }
+    }    
     draw_bitmap(render_state, P, &resources->bitmaps.ghost_pupil);
 }
 

@@ -153,7 +153,7 @@ b32 load_font(char const *path, char const *name, Font *font) {
     _snprintf_s(temp_string, temp_string_max_length, _TRUNCATE, "%s.fnt", name);
 
     Tokenizer tokenizer;
-    result = init(&tokenizer, path, temp_string);
+    result = init_tokenizer(&tokenizer, path, temp_string);
     if (result) {
         Token token;
         //

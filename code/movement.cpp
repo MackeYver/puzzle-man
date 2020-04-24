@@ -218,12 +218,14 @@ v2s get_pacman_move(s32 **maps, Level *level, Actor *pacman) {
     Map_Direction closest_ghost = get_shortest_direction_on_map(level, maps[Map_Ghosts], pacman);
     assert(closest_ghost.direction < Direction_Count);
     assert(closest_ghost.distance >= 0);
+
+    Level_State *state = level->current_state;
     
-    if (pacman->mode == Actor_Mode_Predator && level->mode_duration >= static_cast<u32>(closest_ghost.distance)) {
+    if (pacman->mode == Actor_Mode_Predator && state->mode_duration >= static_cast<u32>(closest_ghost.distance)) {
         next_direction = closest_ghost.direction;
     }
     else {
-        if (level->large_dot_count > 0) {
+        if (state->large_dot_count > 0) {
             Map_Direction closest_large_dot = get_shortest_direction_on_map(level, maps[Map_Dot_Large], pacman);
             assert(closest_large_dot.direction < Direction_Count);
     
@@ -235,7 +237,7 @@ v2s get_pacman_move(s32 **maps, Level *level, Actor *pacman) {
                 next_direction = closest_large_dot.direction;
             }
         }
-        else if (level->small_dot_count > 0) {
+        else if (state->small_dot_count > 0) {
             Map_Direction closest_small_dot = get_shortest_direction_on_map(level, maps[Map_Dot_Small], pacman);
             assert(closest_small_dot.direction < Direction_Count);
             next_direction = closest_small_dot.direction;
@@ -252,8 +254,9 @@ v2s get_pacman_move(s32 **maps, Level *level, Actor *pacman) {
 
 
 void collect_all_moves(s32 **maps, Array_Of_Moves *all_the_moves, Input *input, Level *level) {
-    for (u32 index = 0; index < level->actors.count; ++index) {
-        Actor *actor = &level->actors.data[index];
+    Level_State *state = level->current_state;
+    for (u32 index = 0; index < state->actors.count; ++index) {
+        Actor *actor = &state->actors.data[index];
         if (actor->state != Actor_State_Dead) {
             v2s dP;
             if (actor->type == Actor_Type_Pacman) {
@@ -273,19 +276,22 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
         
     //
     // Solve all collisions with actor (if any) standing on the destination tile
+    Level_State *state = level->current_state;
     u32 resolved_collisions;
-    do {
+    
+    do {        
         resolved_collisions = 0;
+        
         for (u32 set_index = 0; set_index < all_the_moves->count; ++set_index) {
             Move_Set *set = &all_the_moves->data[set_index];
             Tile *dst_tile = get_tile_at(level, set->dst);
-            Actor *dst_actor = get_actor(&level->actors, dst_tile->actor_id);
+            Actor *dst_actor = get_actor(&state->actors, dst_tile->actor_id);
 
             u32 stopped_actors = 0;
 
             for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
                 Move *move = &set->moves[move_index];
-                Actor *src_actor = get_actor(&level->actors, move->actor_id);
+                Actor *src_actor = get_actor(&state->actors, move->actor_id);
 
                 if (src_actor->pending_state == Actor_State_Idle)  continue; // TODO: Do we need to check this?
                 if (actor_will_die(src_actor))                     continue;
@@ -331,7 +337,7 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
         if (set->move_count == 0)  continue;
         
         Tile *dst_tile = get_tile_at(level, set->dst);
-        Actor *dst_actor = get_actor(&level->actors, dst_tile->actor_id);
+        Actor *dst_actor = get_actor(&state->actors, dst_tile->actor_id);
         if (!actor_is_alive(dst_actor)) {                        
             dst_actor = nullptr;
         }
@@ -343,7 +349,7 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
 
         for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
             Move *move = &set->moves[move_index];
-            Actor *src_actor = get_actor(&level->actors, move->actor_id);
+            Actor *src_actor = get_actor(&state->actors, move->actor_id);
             if (!actor_is_alive(src_actor) || src_actor->pending_state == Actor_State_Idle)  continue;
 
             if (set->predator_count > 1) {
@@ -375,7 +381,7 @@ void cancel_moves(Array_Of_Moves *all_the_moves, Level *level) {
 
         for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
             Move *move = &set->moves[move_index];
-            Actor *actor = get_actor(&level->actors, move->actor_id);
+            Actor *actor = get_actor(&level->current_state->actors, move->actor_id);
             actor->pending_state = actor->state;
             actor->next_position = actor->position;
         }
@@ -410,12 +416,14 @@ Direction get_direction_from_move(v2u from, v2u to) {
 
 
 void accept_moves(Array_Of_Moves *all_the_moves, Audio_State *audio, Wavs *wavs, Level *level) {
+    Level_State *state = level->current_state;
+    
     for (u32 move_set_index = 0; move_set_index < all_the_moves->count; ++move_set_index) {
         Move_Set *set = &all_the_moves->data[move_set_index];
 
         for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
             Move *move = &set->moves[move_index];
-            Actor *actor = get_actor(&level->actors, move->actor_id);
+            Actor *actor = get_actor(&state->actors, move->actor_id);
             Tile *dst_tile = get_tile_at(level, set->dst);            
             
             if (actor->pending_state == Actor_State_Moving) {
@@ -432,16 +440,16 @@ void accept_moves(Array_Of_Moves *all_the_moves, Audio_State *audio, Wavs *wavs,
                 // Is the current actor pacman, and has the current tile any dots on it?
                 if (actor->type == Actor_Type_Pacman) {
                     if (dst_tile->item.type == Item_Type_Dot_Small) {
-                        --level->small_dot_count;
-                        level->score -= kDot_Small_Value;
+                        --state->small_dot_count;
+                        state->score -= kDot_Small_Value;
                         dst_tile->item.type = Item_Type_None;
                         play_wav(audio, &wavs->eat_small_dot);
                     }
                     else if (dst_tile->item.type == Item_Type_Dot_Large) {
-                        --level->large_dot_count;
-                        level->score -= kDot_Large_Value;
+                        --state->large_dot_count;
+                        state->score -= kDot_Large_Value;
                         change_pacman_mode(level, Actor_Mode_Predator);
-                        level->mode_duration = kPredator_Mode_Duration;
+                        state->mode_duration = kPredator_Mode_Duration;
                         dst_tile->item.type = Item_Type_None;
                         play_wav(audio, &wavs->eat_large_dot);
 
@@ -460,8 +468,8 @@ void accept_moves(Array_Of_Moves *all_the_moves, Audio_State *audio, Wavs *wavs,
     //
     // Iterate through all actors and kill the ones with the state At_Deaths_Door.
     // We migh have an actor that never were part of a move but should be killed.
-    for (u32 index = 0; index < level->actors.count; ++index) {
-        Actor *actor = &level->actors.data[index];
+    for (u32 index = 0; index < state->actors.count; ++index) {
+        Actor *actor = &state->actors.data[index];
         if (actor->pending_state == Actor_State_At_Deaths_Door) {
             kill_actor(level, actor);
 
