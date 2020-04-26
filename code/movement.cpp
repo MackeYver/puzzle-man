@@ -113,6 +113,33 @@ void clear_array_of_moves(Array_Of_Moves *array) {
 }
 
 
+// DEBUG
+static void debug_check_all_actors(Level *level) {
+    Level_State *state = level->current_state;
+    Array_Of_Actors *array = &state->actors;
+    for (u32 outer_index = 0; outer_index < array->count; ++outer_index) {
+        Actor *outer_actor = &array->data[outer_index];
+
+        if (!actor_is_alive(outer_actor) && !actor_will_die(outer_actor)) {
+            int a = 0;
+            ++a;
+        }
+        
+        for (u32 inner_index = 0; inner_index < array->count; ++inner_index) {
+            if (outer_index == inner_index)  continue;
+
+            Actor *inner_actor = &array->data[inner_index];
+            if (inner_actor->position == outer_actor->position) {
+                if (actor_is_alive(outer_actor) && actor_is_alive(inner_actor)) {
+                    int a = 0;
+                    ++a;
+                }
+            }
+        }
+    }
+}
+
+
 //
 // NOTE: Slow, but we will not have that many moves per turn (famous last words), so we'll should be ok.
 Move_Set *get_move_set(Array_Of_Moves *array, v2u dst) {
@@ -127,7 +154,7 @@ Move_Set *get_move_set(Array_Of_Moves *array, v2u dst) {
 }
 
 
-b32 add_move(Array_Of_Moves *array, Actor *actor, v2u dst) {
+b32 add_move(Array_Of_Moves *array, Actor *actor, v2u dst, Level *level) {
     b32 result = false;
 
     if (array && actor) {
@@ -148,7 +175,11 @@ b32 add_move(Array_Of_Moves *array, Actor *actor, v2u dst) {
                 set->move_count = 1;
             }
             else {
-                assert(set->move_count < 4);
+                //assert(set->move_count < 4);
+                if (set->move_count == 4) {
+                    int a = 0;
+                    ++a;
+                }
                 move = &set->moves[set->move_count++];
             }            
             assert(move);
@@ -199,7 +230,7 @@ void collect_move(Array_Of_Moves *all_the_moves, Level *level, Actor *actor, v2s
     if (move_is_possible(level, actor, dP)) {
         v2u dst = V2u(static_cast<u32>(static_cast<s32>(actor->position.x) + dP.x),
                       static_cast<u32>(static_cast<s32>(actor->position.y) + dP.y));
-        add_move(all_the_moves, actor, dst);
+        add_move(all_the_moves, actor, dst, level);
         actor->pending_state = Actor_State_Moving;
         actor->next_position = dst;
     }
@@ -293,13 +324,13 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
                 Move *move = &set->moves[move_index];
                 Actor *src_actor = get_actor(&state->actors, move->actor_id);
 
-                if (src_actor->pending_state == Actor_State_Idle)  continue; // TODO: Do we need to check this?
-                if (actor_will_die(src_actor))                     continue;
+                if (src_actor->pending_state != Actor_State_Moving)          continue; // TODO: Do we need to check this?
+                if (!actor_is_alive(src_actor) || actor_will_die(src_actor)) continue;
 
                 b32 immobile = false;
                 b32 collision = false;
 
-                if (dst_actor && !actor_will_die(dst_actor)) {
+                if (dst_actor && actor_is_alive(dst_actor) && !actor_will_die(dst_actor)) {
                     immobile = dst_actor->pending_state == Actor_State_Idle;
                     collision = immobile || ((dst_actor->pending_state == Actor_State_Moving) && (dst_actor->next_position == src_actor->position));
                 }
@@ -313,7 +344,7 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
                 // - in event of a collision src may move if it is a predator and dst is a prey
             
                 if (collision) {
-                    if (src_actor->mode == Actor_Mode_Predator && dst_actor->mode == Actor_Mode_Prey) {                        
+                    if (src_actor->mode == Actor_Mode_Predator && dst_actor->mode == Actor_Mode_Prey) {
                         dst_actor->pending_state = Actor_State_At_Deaths_Door;
                     }
                     else {
@@ -331,7 +362,7 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
 
 
     //
-    // Solve moves  
+    // Solve moves            
     for (u32 set_index = 0; set_index < all_the_moves->count; ++set_index) {        
         Move_Set *set = &all_the_moves->data[set_index];
         if (set->move_count == 0)  continue;
@@ -350,7 +381,7 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
         for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
             Move *move = &set->moves[move_index];
             Actor *src_actor = get_actor(&state->actors, move->actor_id);
-            if (!actor_is_alive(src_actor) || src_actor->pending_state == Actor_State_Idle)  continue;
+            if (!actor_is_alive(src_actor) || actor_will_die(src_actor) || src_actor->pending_state == Actor_State_Idle)  continue;
 
             if (set->predator_count > 1) {
                 src_actor->pending_state = Actor_State_Idle;
@@ -436,6 +467,7 @@ void accept_moves(Array_Of_Moves *all_the_moves, Audio_State *audio, Wavs *wavs,
                 actor->pending_state = Actor_State_Idle;
                 actor->direction = get_direction_from_move(actor->position, actor->next_position);
                 actor->position = actor->next_position;
+                
 
                 // Is the current actor pacman, and has the current tile any dots on it?
                 if (actor->type == Actor_Type_Pacman) {

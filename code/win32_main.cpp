@@ -351,6 +351,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     AllocConsole();
     FILE* pcout;
     freopen_s(&pcout, "conout$", "w", stdout);
+    freopen_s(&pcout, "conout$", "w", stderr);
     HWND console_hwnd = GetConsoleWindow();
     SetWindowPos(console_hwnd, HWND_TOPMOST, 300, 500, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 

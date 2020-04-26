@@ -119,8 +119,8 @@ b32 init_game(Game *game) {
 
     result = load_level_from_disc(&game->current_level, &game->resources, "test.level_txt");
     if (result) {
-    create_maps_off_level(game->maps, &game->current_level);
-    game->state = Game_State_Playing;
+        create_maps_off_level(game->maps, &game->current_level);
+        game->state = Game_State_Playing;
     }
     else {
         LOG_ERROR_STR(&game->log, "failed to load level", 0);
@@ -315,9 +315,9 @@ void draw_level(Game *game) {
 #endif
     }
 
-    
-#if 0
+
     // Print actor index at the actors' location (or where the game thinks that the actor are)
+#if 1    
     else {
         // DEBUG
         for (u32 y = 0; y < level_height; ++y) {
@@ -325,37 +325,42 @@ void draw_level(Game *game) {
                 Tile *tile = get_tile_at(level, V2u(x, y));
 
                 if (tile->actor_id.index != 0xFFFF) {
-                    u32 constexpr kOffset_x = kCell_Size / 2;
-                    u32 constexpr kOffset_y = kCell_Size / 2;        
-                    char text[10];
+                    Actor *actor = get_actor(&level->current_state->actors, tile->actor_id);
+                    if (actor && actor->type != Actor_Type_Pacman) {
+                        u32 constexpr kOffset_x = kCell_Size / 2;
+                        u32 constexpr kOffset_y = kCell_Size / 2;        
+                        char text[10];
 
-                    u32 value = tile->actor_id.index;
-                    u32 error = _snprintf_s(text, 10, "%d", value);
-                    assert(error > 0);
+                        u32 value = tile->actor_id.index;
+                        u32 error = _snprintf_s(text, 10, "%d", value);
+                        assert(error > 0);
                 
-                    v2u text_dim = get_text_dim(font, text);
-                    v2u half_text_dim = (text_dim / 2);
-                    v2u text_pos = V2u(kCell_Size * x + kOffset_x, kCell_Size * y + kOffset_y);
-                    if (half_text_dim.x <= text_dim.x && half_text_dim.y <= text_dim.y) {
-                        text_pos = text_pos - half_text_dim;
-                    }
+                        v2u text_dim = get_text_dim(font, text);
+                        v2u half_text_dim = (text_dim / 2);
+                        v2u text_pos = V2u(kCell_Size * x + kOffset_x, kCell_Size * y + kOffset_y);
+                        if (half_text_dim.x <= text_dim.x && half_text_dim.y <= text_dim.y) {
+                            text_pos = text_pos - half_text_dim;
+                        }
 
-                    u32 count;
-                    if (value > 0) {
-                        count = value > 99 ? 3 : value > 9 ? 2 : 1;
+                        u32 count;
+                        if (value > 0) {
+                            count = value > 99 ? 3 : value > 9 ? 2 : 1;
+                        }
+                        else {
+                            count = value < -99 ? 3 : value < -9 ? 2 : 1;
+                        }
+                        v2u text_offset = (text_dim / count) / 8;
+
+                        text_pos = V2u(kCell_Size * x, kCell_Size * y);
+                        print(render_state, font, text_pos, text, v4u8_black);
+                        print(render_state, font, text_pos + text_offset, text, v4u8_white);
                     }
-                    else {
-                        count = value < -99 ? 3 : value < -9 ? 2 : 1;
-                    }
-                    v2u text_offset = (text_dim / count) / 8;
-                
-                    print(render_state, font, text_pos, text, v4u8_black);
-                    print(render_state, font, text_pos + text_offset, text, v4u8_white);
                 }
             }
         }
     }
 #endif
+
     
     //
     // Draw win/defeat if relevant
@@ -426,7 +431,13 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
                 save_current_level_state(level);
                 level_state = level->current_state;
 
+                u32 static debug_counter = 0;
+                printf("Round %u\n", ++debug_counter);
+
+                debug_check_all_actors(level);
                 accept_moves(&game->all_the_moves, &game->audio_state, &game->resources.wavs, level);
+                debug_check_all_actors(level);
+                
                 // Update mode counter                    
                 if (level_state->mode_duration > 0) {
                     --level_state->mode_duration;        

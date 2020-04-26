@@ -167,7 +167,9 @@ b32 grow_array_of_actors(Array_Of_Actors *array) {
             result = true;
 
             for (u16 index = array->count; index < array->capacity; ++index) {
-                array->data[index].id = {index, 0};
+                Actor *actor = &array->data[index];
+                init_actor(actor);
+                actor->id = {index, 0};
             }
         }
         else {
@@ -202,9 +204,7 @@ Actor *new_actor(Array_Of_Actors *array) {
         
         ++array->active;
     }
-
-    if (result)  init_actor(result);
-
+    
     return result;
 }
 
@@ -278,7 +278,6 @@ b32 actor_is_ghost(Actor *actor) {
     return result;
 }
 
-
 b32 actor_is_alive(Actor *actor) {
     b32 result = false;
 
@@ -323,10 +322,11 @@ b32 actor_is_prey(Actor *actor) {
 void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, Actor *pacman, f32 cos_x, f32 sin_y) {  
     Bmp *ghost_bitmap = nullptr;    
         
-    if (actor->mode == Actor_Mode_Prey) {
-        ghost_bitmap = &resources->bitmaps.ghost_as_prey;        
-    }
-    else {
+    // if (actor->mode == Actor_Mode_Prey) {
+    //     ghost_bitmap = &resources->bitmaps.ghost_as_prey;
+    // }
+    //0else
+    {
         switch (actor->type) {
             case Actor_Type_Ghost_Red:    { ghost_bitmap = &resources->bitmaps.ghost_red;    } break;
             case Actor_Type_Ghost_Pink:   { ghost_bitmap = &resources->bitmaps.ghost_pink;   } break;
@@ -387,6 +387,7 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
 
 void kill_actor(Array_Of_Actors *array, Actor *actor) {
     if (array && actor) {
+        printf("%u killed\n", actor->id.index);
         delete_actor(array, actor->id);
         actor->state = Actor_State_Dead;
         actor->pending_state = actor->state;

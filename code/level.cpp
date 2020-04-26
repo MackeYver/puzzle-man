@@ -221,8 +221,6 @@ void save_current_level_state(Level *level) {
         first_index = (first_index + 1) < kLevel_States_Count ? first_index + 1 : 0;
     }
 
-    printf("copy %d to %d\n", curr_index, next_index);
-
     Level_State *curr_level_state = &level->states[curr_index];
     Level_State *next_level_state = &level->states[next_index];
     copy_level_state(next_level_state, curr_level_state);
