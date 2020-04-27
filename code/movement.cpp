@@ -8,6 +8,8 @@ enum Input {
     Input_Left,
     Input_Down,
     Input_Select,
+    Input_Space,
+    Input_Save,
     Input_Escape,
     Input_Delete,
 
@@ -31,6 +33,7 @@ struct Move_Set {
     v2u dst;
     u32 move_count;
     u32 predator_count;
+    b32 cancelled = false;
 };
 
 struct Array_Of_Moves {
@@ -55,6 +58,7 @@ void init_move_set(Move_Set *set) {
     set->dst = v2u_00;
     set->predator_count = 0;
     set->move_count = 0;
+    set->cancelled = false;
 }
 
 
@@ -83,22 +87,22 @@ void init_array_of_moves(Array_Of_Moves *array) {
 }
 
 
-b32 grow_array_of_moves(Array_Of_Moves *array) {
+b32 grow_array_of_moves(Array_Of_Moves *moves) {
     b32 result = false;
     
-    if (array) {
-        u32 new_capacity = array->capacity < 10 ? 10 : 2 * array->capacity;
+    if (moves) {
+        u32 new_capacity = moves->capacity < 10 ? 10 : 2 * moves->capacity;
         size_t new_size = sizeof(Move_Set) * new_capacity;
-        void *new_ptr = realloc(array->data, new_size);
+        void *new_ptr = realloc(moves->data, new_size);
 
         if (new_ptr) {
-            array->data = static_cast<Move_Set *>(new_ptr);
-            array->capacity = new_capacity;
+            moves->data = static_cast<Move_Set *>(new_ptr);
+            moves->capacity = new_capacity;
             result = true;
         }
         else {
             printf("%s in %s failed to realloc memory for the moves. Current capacity = %d, new capacity = %d\n",
-                   __FUNCTION__, __FILE__, array->capacity, new_capacity);
+                   __FUNCTION__, __FILE__, moves->capacity, new_capacity);
         }
     }
 
@@ -106,12 +110,22 @@ b32 grow_array_of_moves(Array_Of_Moves *array) {
 }
  
 
-void clear_array_of_moves(Array_Of_Moves *array) {
-    if (array) {
-        array->count = 0;
+void clear_array_of_moves(Array_Of_Moves *moves) {
+    if (moves) {
+        moves->count = 0;
     }
 }
 
+
+// DEBUG
+static void debug_check_all_move_sets(Array_Of_Moves *moves) {
+    for (u32 index = 0; index < moves->count; ++index) {
+        Move_Set *set = &moves->data[index];
+        if (set->move_count > 1 && (set->predator_count == 0 || set->predator_count == set->move_count)) {
+            printf("Move set %u contains no predators and has more than one moves\n", index);
+        }
+    }
+}
 
 // DEBUG
 static void debug_check_all_actors(Level *level) {
@@ -175,11 +189,7 @@ b32 add_move(Array_Of_Moves *array, Actor *actor, v2u dst, Level *level) {
                 set->move_count = 1;
             }
             else {
-                //assert(set->move_count < 4);
-                if (set->move_count == 4) {
-                    int a = 0;
-                    ++a;
-                }
+                assert(set->move_count < 4);
                 move = &set->moves[set->move_count++];
             }            
             assert(move);
@@ -302,6 +312,24 @@ void collect_all_moves(s32 **maps, Array_Of_Moves *all_the_moves, Input *input, 
 }
 
 
+void cancel_move_set(Level *level, Move_Set *set) {
+    for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
+        Move *move = &set->moves[move_index];
+        Actor *actor = get_actor(&level->current_state->actors, move->actor_id);
+        actor->pending_state = actor->state;
+        actor->next_position = actor->position;
+        set->cancelled = true;
+    }
+}
+
+void cancel_moves(Array_Of_Moves *all_the_moves, Level *level) {
+    for (u32 move_set_index = 0; move_set_index < all_the_moves->count; ++move_set_index) {
+        Move_Set *set = &all_the_moves->data[move_set_index];
+        cancel_move_set(level, set);
+    }
+};
+
+
 u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
     u32 valid_moves = 0;
         
@@ -315,46 +343,54 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
         
         for (u32 set_index = 0; set_index < all_the_moves->count; ++set_index) {
             Move_Set *set = &all_the_moves->data[set_index];
+            if (set->cancelled)  continue;
+            
             Tile *dst_tile = get_tile_at(level, set->dst);
             Actor *dst_actor = get_actor(&state->actors, dst_tile->actor_id);
 
-            u32 stopped_actors = 0;
+            if ((set->predator_count == 0 || set->predator_count > 1) && set->move_count > 1) {
+                cancel_move_set(level, set);
+                ++resolved_collisions;
+                printf("cancelled move set!\n");
+            }
+            else {
+                for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
+                    Move *move = &set->moves[move_index];
+                    Actor *src_actor = get_actor(&state->actors, move->actor_id);
 
-            for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
-                Move *move = &set->moves[move_index];
-                Actor *src_actor = get_actor(&state->actors, move->actor_id);
+                    if (src_actor->pending_state != Actor_State_Moving)          continue; // TODO: Do we need to check this?
+                    if (!actor_is_alive(src_actor) || actor_will_die(src_actor)) continue;
 
-                if (src_actor->pending_state != Actor_State_Moving)          continue; // TODO: Do we need to check this?
-                if (!actor_is_alive(src_actor) || actor_will_die(src_actor)) continue;
+                    b32 immobile = false;
+                    b32 collision = false;
 
-                b32 immobile = false;
-                b32 collision = false;
+                    // Check for collision with the actor standing on the destination tile
+                    if (dst_actor && actor_is_alive(dst_actor) && !actor_will_die(dst_actor)) {
+                        immobile = dst_actor->pending_state == Actor_State_Idle;
+                        collision = immobile || ((dst_actor->pending_state == Actor_State_Moving) && (dst_actor->next_position == src_actor->position));
+                    }                
 
-                if (dst_actor && actor_is_alive(dst_actor) && !actor_will_die(dst_actor)) {
-                    immobile = dst_actor->pending_state == Actor_State_Idle;
-                    collision = immobile || ((dst_actor->pending_state == Actor_State_Moving) && (dst_actor->next_position == src_actor->position));
-                }
-
-                // NOTE:
-                // src_actor will stop if there is a collision and src is not a predator and
-                // dst is not a prey 
-                //
-                // or in other words: we only allow src to move if:
-                // - there is no collision (either if dst is moving away or if dst == nullptr)
-                // - in event of a collision src may move if it is a predator and dst is a prey
+                    // NOTE:
+                    // src_actor will stop if there is a collision and src is not a predator and
+                    // dst is not a prey 
+                    //
+                    // or in other words: we only allow src to move if:
+                    // - there is no collision (either if dst is moving away or if dst == nullptr)
+                    // - in event of a collision src may move if it is a predator and dst is a prey
             
-                if (collision) {
-                    if (src_actor->mode == Actor_Mode_Predator && dst_actor->mode == Actor_Mode_Prey) {
-                        dst_actor->pending_state = Actor_State_At_Deaths_Door;
+                    if (collision) {
+                        if (src_actor->mode == Actor_Mode_Predator && dst_actor->mode == Actor_Mode_Prey) {
+                            dst_actor->pending_state = Actor_State_At_Deaths_Door;
+                        }
+                        else {
+                            src_actor->pending_state = Actor_State_Idle;
+                            if (set->move_count == 1)  set->cancelled = true;
+                        }
+                        ++resolved_collisions;
                     }
                     else {
-                        src_actor->pending_state = Actor_State_Idle;
-                        ++stopped_actors;
+                        src_actor->pending_state = Actor_State_Moving;
                     }
-                    ++resolved_collisions;
-                }
-                else {
-                    src_actor->pending_state = Actor_State_Moving;
                 }
             }
         }
@@ -365,6 +401,7 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
     // Solve moves            
     for (u32 set_index = 0; set_index < all_the_moves->count; ++set_index) {        
         Move_Set *set = &all_the_moves->data[set_index];
+        if (set->cancelled)  continue;
         if (set->move_count == 0)  continue;
         
         Tile *dst_tile = get_tile_at(level, set->dst);
@@ -405,21 +442,6 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
 }
 
 
-void cancel_moves(Array_Of_Moves *all_the_moves, Level *level) {
-    for (u32 move_set_index = 0; move_set_index < all_the_moves->count; ++move_set_index) {
-        Move_Set *set = &all_the_moves->data[move_set_index];
-        //if (!set->is_valid)  continue;
-
-        for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
-            Move *move = &set->moves[move_index];
-            Actor *actor = get_actor(&level->current_state->actors, move->actor_id);
-            actor->pending_state = actor->state;
-            actor->next_position = actor->position;
-        }
-    }
-};
-
-
 Direction get_direction_from_move(v2u from, v2u to) {
     Direction result = Direction_Count;
 
@@ -451,7 +473,8 @@ void accept_moves(Array_Of_Moves *all_the_moves, Audio_State *audio, Wavs *wavs,
     
     for (u32 move_set_index = 0; move_set_index < all_the_moves->count; ++move_set_index) {
         Move_Set *set = &all_the_moves->data[move_set_index];
-
+        if (set->cancelled)  continue;
+        
         for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
             Move *move = &set->moves[move_index];
             Actor *actor = get_actor(&state->actors, move->actor_id);

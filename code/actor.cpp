@@ -322,10 +322,10 @@ b32 actor_is_prey(Actor *actor) {
 void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, Actor *pacman, f32 cos_x, f32 sin_y) {  
     Bmp *ghost_bitmap = nullptr;    
         
-    // if (actor->mode == Actor_Mode_Prey) {
-    //     ghost_bitmap = &resources->bitmaps.ghost_as_prey;
-    // }
-    //0else
+    if (actor->mode == Actor_Mode_Prey) {
+        ghost_bitmap = &resources->bitmaps.ghost_as_prey;
+    }
+    else
     {
         switch (actor->type) {
             case Actor_Type_Ghost_Red:    { ghost_bitmap = &resources->bitmaps.ghost_red;    } break;
@@ -337,7 +337,6 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
 
     v2u Po = V2u(kCell_Size * actor->position.x, kCell_Size * actor->position.y);
     v2u P = Po;
-    //#if 0
     u32 x_off = 0;
     u32 y_off = 0;
     f32 Pax = static_cast<f32>(Po.x);
@@ -387,7 +386,6 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
 
 void kill_actor(Array_Of_Actors *array, Actor *actor) {
     if (array && actor) {
-        printf("%u killed\n", actor->id.index);
         delete_actor(array, actor->id);
         actor->state = Actor_State_Dead;
         actor->pending_state = actor->state;

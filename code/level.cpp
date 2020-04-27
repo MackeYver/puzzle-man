@@ -2,6 +2,50 @@
 // Declarations
 //
 
+
+//
+// Maps
+enum Map_Type {
+    Map_Ghosts = 0,
+    Map_Flee_Ghosts,
+    Map_Dot_Small,
+    Map_Dot_Large,
+
+    Map_Count,
+};
+
+
+struct Map_Direction {
+    Direction direction = Direction_Unknown;
+    s32 distance = 0;
+};
+
+
+#ifdef DEBUG
+char static *kMap_Names[] = {
+    "Map_Ghosts",
+    "Map_Flee_Ghosts",
+    "Map_Dot_Small",
+    "Map_Dot_Large",
+    "No_map",
+};
+#endif
+
+
+//
+// Level
+enum Level_Render_Mode {
+    Level_Render_Mode_Tiles     = 1 << 1,
+    Level_Render_Mode_Items     = 1 << 2,
+    Level_Render_Mode_Actors    = 1 << 3,
+    Level_Render_Mode_Grid      = 1 << 4,
+    Level_Render_Mode_Actor_IDs = 1 << 5,
+    Level_Render_Mode_All       = Level_Render_Mode_Tiles | Level_Render_Mode_Items | Level_Render_Mode_Actors,
+
+    Level_Render_Mode_count,
+};
+
+
 struct Level_State {
     Array_Of_Actors actors;
     Tile *tiles = nullptr;
@@ -16,15 +60,19 @@ struct Level_State {
 };
 
 
-
 #define kLevel_States_Count 100
 
 struct Level {
     Level_State states[kLevel_States_Count];
-    Level_State *current_state = nullptr;
+    Level_State original_state;
+
+    s32 *maps[Map_Count] = {};
+    u32 current_map_index = Map_Count; // DEBUG
+    
+    Level_State *current_state  = nullptr;
     u32 first_valid_state_index = 0;
-    u32 last_valid_state_index = 0;
-    u32 current_state_index = 0;
+    u32 last_valid_state_index  = 0;
+    u32 current_state_index     = 0;
     
     char name[kLevel_Name_Max_Length] = {'\0'};    
     
@@ -62,6 +110,7 @@ void free_level_state(Level_State *state) {
     }
 }
 
+// NOTE: level state 0 is the original state. Here we clear _all_ states, including state 0.
 void free_all_level_states(Level *level) {
     for (u32 index = 0; index < kLevel_States_Count; ++index) {
         free_level_state(&level->states[index]);
@@ -72,6 +121,7 @@ void free_all_level_states(Level *level) {
     level->last_valid_state_index = 0;
     level->current_state = nullptr;
 }
+
 
 b32 is_valid_level_state_index(Level *level, u32 n) {
     b32 result = false;
@@ -92,7 +142,8 @@ b32 is_valid_level_state_index(Level *level, u32 n) {
 }
 
 
-Level_State *get_level_state_n(Level *level, u32 n) {
+// NOTE: returns nullptr if level state n is not a valid level state
+Level_State *get_valid_level_state_n(Level *level, u32 n) {
     Level_State *result = nullptr;
 
     if (level && is_valid_level_state_index(level, n)) {
@@ -103,46 +154,22 @@ Level_State *get_level_state_n(Level *level, u32 n) {
 }
 
 
+// NOTE: returns nullptr if the current level state is not a valid level state
 Level_State *get_current_level_state(Level *level) {
-    Level_State *result = get_level_state_n(level, level->current_state_index);
+    Level_State *result = get_valid_level_state_n(level, level->current_state_index);
     level->current_state = result;
     return result;
 }
 
 
-u32 get_first_level_state_index(Level *level) {
-    u32 result = level->first_valid_state_index;
-    return result;
-}
-
-u32 get_prev_valid_level_state_index(Level *level) {
-    u32 result = level->current_state_index;
-
-    if (level) {
-        u32 curr_index = level->current_state_index;
-        u32 prev_index = curr_index == 0 ? prev_index = (kLevel_States_Count - 1) : curr_index - 1;
-
-        if (is_valid_level_state_index(level, prev_index)) {
-            result = prev_index;
-        }
+static void undo_one_level_state(Level *level) {
+    u32 curr_index = level->current_state_index;
+    u32 prev_index = curr_index == 0 ? prev_index = (kLevel_States_Count - 1) : curr_index - 1;
+    Level_State *prev_state = get_valid_level_state_n(level, prev_index);
+    if (prev_state) {
+        level->current_state_index = prev_index;
+        level->current_state = prev_state;        
     }
-
-    return result;
-}
-
-u32 get_next_valid_level_state_index(Level *level) {
-    u32 result = level->current_state_index;
-
-    if (level) {
-        u32 curr_index = level->current_state_index;
-        u32 next_index = curr_index < (kLevel_States_Count - 1) ? curr_index + 1 : 0;
-
-        if (is_valid_level_state_index(level, next_index)) {
-            result = next_index;
-        }
-    }
-
-    return result;
 }
 
 
@@ -188,6 +215,12 @@ void save_current_level_state(Level *level) {
     //   first_index, last_index, current_index < kWorld_Level_States_Count
     //   current_index >= first_index && current_index <= last_index
     //
+    
+    //
+    // NOTE: level state 0 is the original state, we don't mess with the original state.
+    //       When we load the level, we always load the original level into slot 0 and
+    //       then we copy that into slot 1. So state 1 is the first playable state.
+    //
 
     u32 first_index = level->first_valid_state_index;
     u32 last_index  = level->last_valid_state_index;
@@ -217,7 +250,7 @@ void save_current_level_state(Level *level) {
         }
     }
     else if (next_index == first_index) { // Will we wrap around?
-        free_level_state(get_level_state_n(level, first_index));
+        free_level_state(get_valid_level_state_n(level, first_index));
         first_index = (first_index + 1) < kLevel_States_Count ? first_index + 1 : 0;
     }
 
@@ -232,6 +265,24 @@ void save_current_level_state(Level *level) {
 }
 
 
+static void redo_one_level_state(Level *level) {
+    u32 curr_index = level->current_state_index;
+    u32 next_index = curr_index < (kLevel_States_Count - 1) ? curr_index + 1 : 0;
+    Level_State *next_level_state = get_valid_level_state_n(level, next_index);
+    if (next_level_state) {
+        level->current_state_index = next_index;
+        level->current_state = next_level_state;
+    }
+}
+
+
+static void reset_level(Level *level) {
+    free_all_level_states(level);
+    copy_level_state(&level->states[0], &level->original_state);
+    level->current_state = &level->states[0];
+}
+
+
 
 
 //
@@ -241,6 +292,7 @@ void save_current_level_state(Level *level) {
 void fini_level(Level *level) {
     if (level) {
         free_all_level_states(level);
+        free_level_state(&level->original_state);
 
         level->first_valid_state_index = 0;
         level->last_valid_state_index = 0;
@@ -252,6 +304,13 @@ void fini_level(Level *level) {
         level->name[0] = '\0';
         level->pacman_id.index = 0xFFFF;
         level->pacman_id.salt = 0xFFFF;
+
+        for (u32 map_index = 0; map_index < Map_Count; ++map_index) {
+            if (level->maps[map_index]) {
+                free(level->maps[map_index]);
+                level->maps[map_index] = nullptr;
+            }
+        }
     }
 };
 
@@ -263,8 +322,24 @@ void init_level(Level *level, Resources *resources) {
     level->pacman_id.index = 0xFFFF;
     level->pacman_id.salt = 0xFFFF;
     
-    level->current_state_index = get_first_level_state_index(level);
-    level->current_state = get_level_state_n(level, level->current_state_index);
+    level->current_state_index = level->first_valid_state_index;
+    level->current_state = get_valid_level_state_n(level, level->current_state_index);
+
+    level->current_map_index = Map_Count; // DEBUG
+}
+
+
+static void init_level_as_copy_of_level(Level *dst, Level *src, Level_State *state) {
+    init_level(dst, src->resources);
+    
+    copy_level_state(&dst->original_state, state);
+    copy_level_state(&dst->states[0], &dst->original_state);
+    
+    dst->pacman_id = src->pacman_id;
+    dst->width     = src->width;
+    dst->height    = src->height;
+
+    _snprintf_s(dst->name, kLevel_Name_Max_Length, _TRUNCATE, "copy of %s", src->name);
 }
 
 
@@ -392,40 +467,120 @@ void kill_actor(Level *level, Actor *actor) {
 // Rendering
 //
 
-void draw_current_level(Render_State *render_state, Level *level, u32 microseconds_since_start) {
-    Font *font = &level->resources->font;    
+void draw_level(Render_State *render_state, Level *level, u32 render_mode, u32 microseconds_since_start) {
+    Level_State *state = level->current_state;
+    Font *font = &level->resources->font;
+    Resources *resources = level->resources;
     u32 width = level->width;
-    u32 height = level->height;    
-    
+    u32 height = level->height;
+
+
     //
-    // Draw all tiles
+    // Draw background
+#if 0
+    u32 cell_size = render_state->backbuffer_width / level->width;
+    assert(cell_size == kCell_Size);
+    
     for (u32 y = 0; y < height; ++y) {
         for (u32 x = 0; x < width; ++x) {
-            Tile *tile = get_tile_at(level, x, y);
-            draw_tile(render_state, level->resources, tile, V2u(kCell_Size * x, kCell_Size * y));
+            v2u P = V2u(cell_size * x, cell_size * y);
+
+            if (bitmaps->background.data) {
+                draw_bitmap(render_state, &resources->bitmaps->background);
+            }
+        }
+    }
+#endif
+
+    //
+    // Draw all tiles
+    if ((render_mode & Level_Render_Mode_Tiles) | (render_mode & Level_Render_Mode_Items)) {
+        for (u32 y = 0; y < height; ++y) {
+            for (u32 x = 0; x < width; ++x) {
+                Tile *tile = get_tile_at(level, x, y);
+                v2u P = V2u(kCell_Size * x, kCell_Size * y);
+                if (render_mode & Level_Render_Mode_Tiles) {
+                    draw_tile(render_state, resources, tile, P);
+                }
+                if (render_mode & Level_Render_Mode_Items) {
+                    draw_item(render_state, resources, tile, P);
+                }
+            }
+        }
+    }
+
+
+    //
+    // Draw grid
+    if (render_mode & Level_Render_Mode_Grid) {
+        v4u8 const border_colour = {255, 255, 255, 75};
+        for (u32 y = 0; y < height; ++y) {
+            for(u32 x = 0; x < width; ++x) {
+                draw_rectangle_outline(render_state, V2u(kCell_Size * x, kCell_Size * y), kCell_Size, kCell_Size, border_colour);
+            }
         }
     }
 
     
     //
     // Draw all actors
-    Level_State *state = level->current_state;
-    Actor *pacman = get_pacman(level);
+    if (render_mode & Level_Render_Mode_Actors) {
+        Actor *pacman = get_pacman(level);
 
-    // Timings for ghost animation
-    f32 constexpr k = 1.0f / 1000000.0f;
-    f32 t = static_cast<f32>(microseconds_since_start) * k;
-    f32 x_offset = 0.0f;//sinf(3.6f*t);
-    f32 y_offset = 3.0f*cosf(1.8f*t);
+        // Timings for ghost animation
+        f32 constexpr k = 1.0f / 1000000.0f;
+        f32 t = static_cast<f32>(microseconds_since_start) * k;
+        f32 x_offset = 0.0f;//sinf(3.6f*t);
+        f32 y_offset = 3.0f*cosf(1.8f*t);
     
-    for (u32 index = 0; index < state->actors.count; ++index) {
-        Actor *actor = &state->actors.data[index];
-        if (actor_is_alive(actor)) {
-            if (actor_is_ghost(actor)) {
-                draw_ghost(render_state, level->resources, actor, pacman, x_offset, y_offset);
+        for (u32 index = 0; index < state->actors.count; ++index) {
+            Actor *actor = &state->actors.data[index];
+            if (actor_is_alive(actor)) {
+                if (actor_is_ghost(actor)) {
+                    draw_ghost(render_state, resources, actor, pacman, x_offset, y_offset);
+                }
+                else if (actor->type == Actor_Type_Pacman) {
+                    draw_pacman(render_state, resources, actor, microseconds_since_start);
+                }
             }
-            else if (actor->type == Actor_Type_Pacman) {
-                draw_pacman(render_state, level->resources, actor, microseconds_since_start);
+        }
+    }
+
+
+    if (render_mode & Level_Render_Mode_Actor_IDs) {
+        for (u32 y = 0; y < height; ++y) {
+            for (u32 x = 0; x < width; ++x) {
+                Tile *tile = get_tile_at(level, V2u(x, y));
+
+                if (tile->actor_id.index != 0xFFFF) {
+                    u32 constexpr kOffset_x = kCell_Size / 2;
+                    u32 constexpr kOffset_y = kCell_Size / 2;        
+                    char text[10];
+
+                    u32 value = tile->actor_id.index;
+                    u32 error = _snprintf_s(text, 10, "%d", value);
+                    assert(error > 0);
+                
+                    v2u text_dim = get_text_dim(font, text);
+                    v2u half_text_dim = (text_dim / 2);
+                    v2u text_pos = V2u(kCell_Size * x + kOffset_x, kCell_Size * y + kOffset_y);
+                    if (half_text_dim.x <= text_dim.x && half_text_dim.y <= text_dim.y) {
+                        text_pos = text_pos - half_text_dim;
+                    }
+
+                    u32 count;
+                    if (value > 0) {
+                        count = value > 99 ? 3 : value > 9 ? 2 : 1;
+                    }
+                    else {
+                        count = value < -99 ? 3 : value < -9 ? 2 : 1;
+                    }
+                    v2u text_offset = (text_dim / count) / 8;
+
+                    text_pos = V2u(kCell_Size * x, kCell_Size * y);
+                    print(render_state, font, text_pos, text, v4u8_black);
+                    print(render_state, font, text_pos + text_offset, text, v4u8_white);
+                }
             }
         }
     }
@@ -435,10 +590,54 @@ void draw_current_level(Render_State *render_state, Level *level, u32 microsecon
     // Score
     {
         char text[50];
-        _snprintf_s(text, 50, _TRUNCATE, "Level %s, score %u", level->name, state->score);
+        _snprintf_s(text, 50, _TRUNCATE, "Score %u", state->score);
         print(render_state, font, V2u(10, 10), text);
     }
 }
+
+
+static void draw_level_win_text (Render_State *render_state, Font *font) {
+    char const *win_text = "VICTORIOUS!";
+    v2u text_dim = get_text_dim(font, win_text);
+    v2u Pt = V2u((render_state->backbuffer_width - text_dim.x) / 2, 300);
+
+    v2u offset = V2u(50, 50);
+    v2u rectangle_size = text_dim + (2*offset);
+    draw_filled_rectangle(render_state, Pt - offset - V2u(1, 1), rectangle_size.x + 2, rectangle_size.y + 2, v4u8_green);
+    draw_filled_rectangle(render_state, Pt - offset            , rectangle_size.x    , rectangle_size.y    , v4u8_black);        
+        
+    print(render_state, font, Pt, win_text, v4u8_green);
+}
+
+
+static void draw_level_lost_text(Render_State *render_state, Font *font) {
+    v2u Pc = V2u(render_state->backbuffer_width, render_state->backbuffer_height) / 2;
+    u32 row_offset = 30;
+    u32 half_row_offset = row_offset / 2;
+        
+    char const *defeat_text = "DEFEATED!";
+    v2u defeat_text_dim = get_text_dim(font, defeat_text);
+    v2u Ptd = Pc;
+    Ptd.x -= (defeat_text_dim.x / 2);
+    Ptd.y += half_row_offset;
+        
+    char const *reset_text = "Press Enter or R to reset level and try again!";
+    v2u reset_text_dim = get_text_dim(font, reset_text);
+    v2u Ptr = Pc;
+    Ptr.x -= (reset_text_dim.x / 2);
+    Ptr.y -= (half_row_offset + defeat_text_dim.y);
+        
+    v2u text_dim = V2u(max(defeat_text_dim.x, reset_text_dim.x), defeat_text_dim.y + reset_text_dim.y + row_offset);
+        
+    v2u offset = V2u(25, 25);
+    v2u rectangle_size = text_dim + (2*offset);
+    draw_filled_rectangle(render_state, Ptr - offset - V2u(1, 1), rectangle_size.x + 2, rectangle_size.y + 2, v4u8_red);
+    draw_filled_rectangle(render_state, Ptr - offset            , rectangle_size.x    , rectangle_size.y    , v4u8_black);        
+        
+    print(render_state, font, Ptd, defeat_text, v4u8_red);
+    print(render_state, font, Ptr, reset_text, v4u8_red);
+}
+
 
 
 
@@ -564,15 +763,13 @@ b32 parse_level_header(Tokenizer *tokenizer, Level *level) {
     }
 }
 
-b32 add_actor(Tokenizer *tokenizer, Level *level, u32 x, u32 y, Actor_Type actor_type) {
+b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, u32 x, u32 y, Actor_Type actor_type) {
     assert(actor_type < Actor_Type_Count);    
 
     if (actor_type >= Actor_Type_Count) {
         printf("%s() got an invalid actor type (%u)\n", __FUNCTION__, actor_type);
         return false;
     }
-
-    Level_State *state = level->current_state;
     
     u32 reversed_y = level->height - 1 - y;
     Actor *curr_actor = new_actor(&state->actors);
@@ -620,13 +817,9 @@ b32 add_actor(Tokenizer *tokenizer, Level *level, u32 x, u32 y, Actor_Type actor
 }
 
 
-b32 parse_level(Tokenizer *tokenizer, Level *level) {
-    assert(tokenizer);
-    assert(level);    
-
-    b32 result = parse_level_header(tokenizer, level);
+b32 parse_level(Tokenizer *tokenizer, Level *level, Level_State *state) {
+    b32 result = parse_level_header(tokenizer, level);    
     if (result) {
-        Level_State *state = level->current_state;
         state->tile_count = level->width * level->height;
         state->tiles = static_cast<Tile *>(calloc(state->tile_count, sizeof(Tile)));
         assert(state->tiles);
@@ -690,11 +883,11 @@ b32 parse_level(Tokenizer *tokenizer, Level *level) {
                     
                 //
                 // NOTE: Beneath every actor there is a floor, holding them up.
-                case Level_Token_Ghost_Red:    { if (!add_actor(tokenizer, level, x, y, Actor_Type_Ghost_Red))     should_loop = false; } break;
-                case Level_Token_Ghost_Pink:   { if (!add_actor(tokenizer, level, x, y, Actor_Type_Ghost_Pink))    should_loop = false; } break;
-                case Level_Token_Ghost_Cyan:   { if (!add_actor(tokenizer, level, x, y, Actor_Type_Ghost_Cyan))    should_loop = false; } break;
-                case Level_Token_Ghost_Orange: { if (!add_actor(tokenizer, level, x, y, Actor_Type_Ghost_Orange))  should_loop = false; } break;
-                case Level_Token_Pacman:       { if (!add_actor(tokenizer, level, x, y, Actor_Type_Pacman))        should_loop = false; } break;
+                case Level_Token_Ghost_Red:    { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Red))     should_loop = false; } break;
+                case Level_Token_Ghost_Pink:   { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Pink))    should_loop = false; } break;
+                case Level_Token_Ghost_Cyan:   { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Cyan))    should_loop = false; } break;
+                case Level_Token_Ghost_Orange: { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Orange))  should_loop = false; } break;
+                case Level_Token_Pacman:       { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Pacman))        should_loop = false; } break;
 
                 default: {                    
                     Token token = get_token(tokenizer);
@@ -737,13 +930,12 @@ b32 parse_level(Tokenizer *tokenizer, Level *level) {
     return result;
 }
 
-void adjust_walls_in_level(Level *level, Resources *resources) {
+void adjust_walls_in_level(Level *level, Level_State *state, Resources *resources) {
     for (u32 y = 0; y < level->height; ++y) {
         for (u32 x = 0; x < level->width; ++x) {
             u32 curr_index = (level->width * y) + x;
             u32 sum = 0;
 
-            Level_State *state = level->current_state;
             if (tile_has_wall(&state->tiles[curr_index])) {
                 if (x < (level->width - 1)) {
                     u32 right_index = (level->width * y) + x + 1;
@@ -784,14 +976,244 @@ b32 load_level_from_disc(Level *level, Resources *resources, char const *filenam
     Tokenizer tokenizer;
     b32 result = init_tokenizer(&tokenizer, "data\\levels\\", filename);    
     if (result) {
-        result = parse_level(&tokenizer, level);
+        result = parse_level(&tokenizer, level, &level->original_state);
         if (!result) {
             fini_level(level);
         }
         else {
-            adjust_walls_in_level(level, resources);
+            adjust_walls_in_level(level, &level->original_state, resources);
+        }
+    }    
+    fini_tokenizer(&tokenizer);
+
+    copy_level_state(&level->states[0], &level->original_state);
+    level->first_valid_state_index = 0;
+    level->last_valid_state_index = 0;
+    level->current_state_index = 0;
+    level->current_state = &level->states[0];
+
+    return result;
+}
+
+
+
+
+//
+// #_Maps
+// Dijkstra ("dijkstra-maps")
+// - http://www.roguebasin.com/index.php?title=The_Incredible_Power_of_Dijkstra_Maps
+//
+
+void process_map(s32 *map, Tile *tiles, u32 width, u32 height, u32 max_value = 999) {
+    u32 change_count = 1;
+    while (change_count > 0) {
+        change_count = 0;            
+        for (u32 y = 0; y < height; ++y) {
+            for (u32 x = 0; x < width; ++x) {
+                u32 curr_index = (width * y) + x;
+
+                Tile *tile = &tiles[curr_index];
+                if (!tile_is_traversable(tile))  continue;
+                    
+                s32 min_value = max_value;
+
+                if (x < (width - 1)) {
+                    u32 next_index = (width * y) + x + 1;
+                    s32 *next_value = &map[next_index];
+                    min_value = min_value > *next_value ? *next_value : min_value;
+                }
+
+                if (y < (height - 1)) {
+                    u32 next_index = (width * (y + 1)) + x;
+                    s32 *next_value = &map[next_index];
+                    min_value = min_value > *next_value ? *next_value : min_value;
+                }
+
+                if (x > 0) {
+                    u32 next_index = (width * y) + x - 1;
+                    s32 *next_value = &map[next_index];
+                    min_value = min_value > *next_value ? *next_value : min_value;
+                }
+
+                if (y > 0) {
+                    u32 next_index = (width * (y - 1)) + x;
+                    s32 *next_value = &map[next_index];
+                    min_value = min_value > *next_value ? *next_value : min_value;
+                }
+
+                s32 *curr_value = &map[curr_index];
+                if (*curr_value > (min_value + 1)) {
+                    *curr_value = min_value + 1;
+                    ++change_count;
+                }
+            }
+        }
+    }
+}
+
+
+void create_maps_off_level(Level *level) {
+    size_t map_size_in_bytes = level->width * level->height * sizeof(s32);
+    for (u32 map_index = 0; map_index < Map_Count; ++map_index) {
+        s32 **map = &level->maps[map_index];
+        if (*map) {
+            free(*map);
+            *map = nullptr;
+        }
+        
+        *map = static_cast<s32 *>(malloc(map_size_in_bytes));    
+        assert(*map);
+    }
+    
+    u32 width = level->width;
+    u32 height = level->height;
+    Tile *tiles = level->current_state->tiles;
+    u32 constexpr max_value = 300;
+
+
+    //
+    // Process the maps
+    for (u32 map_index = 0; map_index < Map_Count; ++map_index) {
+        s32 *map = level->maps[map_index];        
+        
+        //
+        // Set initial values           
+        for (u32 y = 0; y < height; ++y) {
+            for (u32 x = 0; x < width; ++x) {
+                u32 index = (width * y) + x;
+                s32 *value = &map[index];
+                Tile *tile = &tiles[index];
+                *value = max_value;
+                
+                if (tile_is_traversable(tile)) {
+                    if (map_index == Map_Ghosts || map_index == Map_Flee_Ghosts) {
+                        Actor *actor = get_actor_at(level, x, y);
+                        if (actor && actor_is_ghost(actor)) {
+                            *value = 0;
+                        }
+                    }
+                    else if (map_index == Map_Dot_Small) {
+                        if (tile->item.type == Item_Type_Dot_Small) {
+                            *value = 0;
+                        }
+                    }
+                    else if (map_index == Map_Dot_Large) {
+                        if (tile->item.type == Item_Type_Dot_Large) {
+                            *value = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        process_map(map, tiles, width, height, max_value);
+    }
+
+    
+    //
+    // For the flee map, we want to "invert" the values so that when "rolling down" it, we will
+    // move away from the ghosts but moving away in a manner that doesn't always lead to the corners.
+    {
+        s32 *map = level->maps[Map_Flee_Ghosts];
+        for (u32 y = 0; y < height; ++y) {
+            for (u32 x = 0; x < width; ++x) {
+                u32 curr_index = (width * y) + x;
+                
+                Tile *tile = &tiles[curr_index];
+                if (!tile_is_traversable(tile))  continue;
+
+                map[curr_index] = -1 * map[curr_index];
+            }
+        }
+
+        process_map(map, tiles, width, height, max_value);
+    }
+}
+
+
+Map_Direction get_shortest_direction_on_map(Level *level, s32 *map, Actor *actor) {
+    Map_Direction result = {Direction_Unknown, 0x7FFFFFFF};
+    //Level *level = get_current_level_state(world);
+
+    s32 constexpr X[] = {1, 0, -1, 0};
+    s32 constexpr Y[] = {0, 1, 0, -1};
+
+    v2u P = actor->position;
+    
+    if (P.x < level->width && P.y < level->height) {
+        for (u32 index = 0; index < 4; ++index) {
+            v2s dP = v2s(X[index], Y[index]);
+            if (move_is_possible(level, actor, dP)) {
+                v2s new_P = P + dP;
+                s32 value = map[(level->width * new_P.y) + new_P.x];
+                if (value < result.distance) {
+                    result.distance = value;
+                    result.direction = static_cast<Direction>(index);
+                }
+            }
         }
     }
 
     return result;
+};
+
+
+static void draw_maps(Render_State *render_state, Level *level, s32 **maps, u32 map_index) {
+    //
+    // Draw maps, DEBUG
+    u32 level_width  = level->width;
+    u32 level_height = level->height; 
+    Font *font = &level->resources->font;
+    
+    if (map_index < Map_Count && maps[map_index]) {
+        char text[10];
+
+        u32 constexpr kOffset_x = kCell_Size / 2;
+        u32 constexpr kOffset_y = kCell_Size / 2;
+        
+        for (u32 y = 0; y < level_height; ++y) {
+            for (u32 x = 0; x < level_width; ++x) {
+                u32 index = (level_width * y) + x;
+                s32 value = maps[map_index][index];
+                u32 error = _snprintf_s(text, 10, _TRUNCATE, "%d", value);
+                assert(error > 0);
+                
+                v2u text_dim = get_text_dim(font, text);
+                v2u half_text_dim = (text_dim / 2);
+                v2u text_pos = V2u(kCell_Size * x + kOffset_x,kCell_Size * y + kOffset_y);
+                if (half_text_dim.x <= text_dim.x && half_text_dim.y <= text_dim.y) {
+                    text_pos = text_pos - half_text_dim;
+                }
+
+                u32 count;
+                if (value > 0) {
+                    count = value > 99 ? 3 : value > 9 ? 2 : 1;
+                }
+                else {
+                    count = value < -99 ? 3 : value < -9 ? 2 : 1;
+                }
+
+                //v2u text_offset = (text_dim / count) / 7;
+                v2u text_offset = V2u(1, 1);
+
+                Tile *curr_tile = get_tile_at(level, V2u(x, y));
+                if (curr_tile && curr_tile->item.type > Item_Type_None) {
+                    text_pos.y = text_pos.y - kOffset_y + (kCell_Size / 8);
+                }
+                
+                print(render_state, font, text_pos, text, V4u8(100, 100, 100, 255));
+                print(render_state, font, text_pos + text_offset, text, v4u8_white);
+            }
+        }
+
+
+#ifdef DEBUG
+        char map_name_text[50];
+        u32 error = _snprintf_s(map_name_text, 50, _TRUNCATE, "Map: %s", kMap_Names[map_index]);
+        assert(error > 0);        
+        v2u text_dim = get_text_dim(font, map_name_text);
+        u32 char_width = text_dim.x / static_cast<u32>(strlen(map_name_text));
+        print(render_state, font, V2u(render_state->backbuffer_width - text_dim.x - char_width, 10), map_name_text);
+#endif
+    }
 }

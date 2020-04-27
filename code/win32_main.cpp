@@ -172,9 +172,8 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
 #include "actor.cpp"
 #include "tile_and_item.cpp"
 #include "level.cpp"
-
-#include "maps.cpp"
 #include "movement.cpp"
+#include "editor.cpp"
 #include "game_main.cpp"
 
 
@@ -200,7 +199,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
         // case WM_MOUSEMOVE: {
         // } break;
 
-        // case WM_SIZE: {
+        // case WM_SIZE: {            
         // } break;
 
         case WM_PAINT: {
@@ -288,20 +287,91 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
             else if (w_param == VK_DELETE) {
                 game->input = Input_Delete;
             }
+            else if (w_param == VK_SPACE) {
+                game->input = Input_Space;
+            }
+            else if (w_param == VK_TAB) {
+                if (game->state == Game_State_Editing || game->state == Game_State_Begin_Editing) {
+                    game->state = Game_State_End_Editing;
+                }
+                else {
+                    game->state = Game_State_Begin_Editing;
+                }
+            }
+            else if (w_param ==0x31) { // 1
+                u32 *render_mode = nullptr;
+                if (game->state == Game_State_Editing) {
+                    render_mode = &game->editor.render_mode;
+                }
+                else {
+                    render_mode = &game->render_mode;
+                }
+                *render_mode ^= Level_Render_Mode_Tiles;
+            }
+            else if (w_param ==0x32) { // 2
+                u32 *render_mode = nullptr;
+                if (game->state == Game_State_Editing) {
+                    render_mode = &game->editor.render_mode;
+                }
+                else {
+                    render_mode = &game->render_mode;
+                }
+                *render_mode ^= Level_Render_Mode_Items;
+            }
+            else if (w_param ==0x33) { // 3
+                u32 *render_mode = nullptr;
+                if (game->state == Game_State_Editing) {
+                    render_mode = &game->editor.render_mode;
+                }
+                else {
+                    render_mode = &game->render_mode;
+                }
+                *render_mode ^= Level_Render_Mode_Actors;
+            }
+            else if (w_param ==0x34) { // 4
+                u32 *render_mode = nullptr;
+                if (game->state == Game_State_Editing) {
+                    render_mode = &game->editor.render_mode;
+                }
+                else {
+                    render_mode = &game->render_mode;
+                }
+                *render_mode |= Level_Render_Mode_All;
+            }            
+            else if (w_param == 0x49) { // I
+                u32 *render_mode = nullptr;
+                if (game->state == Game_State_Editing) {
+                    render_mode = &game->editor.render_mode;
+                }
+                else {
+                    render_mode = &game->render_mode;
+                }
+                *render_mode ^= Level_Render_Mode_Actor_IDs;
+            }
+            else if (w_param == 0x47) { // G
+                u32 *render_mode = nullptr;
+                if (game->state == Game_State_Editing) {
+                    render_mode = &game->editor.render_mode;
+                }
+                else {
+                    render_mode = &game->render_mode;
+                }
+                *render_mode ^= Level_Render_Mode_Grid;
+            }
             else if (w_param == 0x52) { // R
                 reset(game);
             }
-            else if (w_param == 0x47) { // G
-                ++game->draw_grid_mode;
-                game->draw_grid_mode = game->draw_grid_mode > 2 ? 0 : game->draw_grid_mode;
-            }
             else if (w_param == VK_BACK || (!shift_is_down && ctrl_is_down && w_param == 0x5A)) {
                 // 0x5A == 'z
-                undo(game);
+                if (game->state != Game_State_Editing) {
+                    undo(game);
+                }
             }
             else if ((shift_is_down && ctrl_is_down && w_param == 0x5A) || ctrl_is_down && w_param == 0x59) {
                 // 0x59 == 'y'
-                redo(game);
+                if (game->state != Game_State_Editing) {
+                    redo(game);
+                }
             }
             else if (w_param == VK_F5) {
                 // Save
@@ -312,22 +382,44 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                 //read_player_profiles_from_disc(game->player_profiles);
             }                
             else if (game->state == Game_State_Lost && w_param == VK_RETURN) {
-                reset(game);
+                if (game->state != Game_State_Editing) {
+                    reset(game);
+                }
             }
             else if (game->state == Game_State_Won && w_param == VK_RETURN) {
-                change_to_next_level(game);
+                if (game->state != Game_State_Editing) {
+                    change_to_next_level(game);
+                }
             }            
-            else if (w_param == VK_F1) { // DEBUG
-                change_to_prev_level(game);
+            else if (w_param == VK_F1) { // DEBUG                
+                if (game->state != Game_State_Editing) {
+                    change_to_prev_level(game);
+                }
             }
             else if (w_param == VK_F2) { // DEBUG
-                change_to_next_level(game);
+                if (game->state != Game_State_Editing) {
+                    change_to_next_level(game);
+                }
             }
             else if (w_param == VK_F3) { // DEBUG
-                game->current_map_index = game->current_map_index == 0 ? Map_Count : game->current_map_index - 1;
+                Level *level = nullptr;
+                if (game->state == Game_State_Editing) {
+                    level = &game->editor.level;
+                }
+                else {
+                    level = &game->current_level;
+                }
+                level->current_map_index = level->current_map_index == 0 ? Map_Count : level->current_map_index - 1;
             }
             else if (w_param == VK_F4) { // DEBUG
-                game->current_map_index = (game->current_map_index + 1) % (Map_Count + 1);
+                Level *level = nullptr;
+                if (game->state == Game_State_Editing) {
+                    level = &game->editor.level;
+                }
+                else {
+                    level = &game->current_level;
+                }
+                level->current_map_index = (level->current_map_index + 1) > Map_Count ? 0 : (level->current_map_index + 1);
             }
         } break;
     }
@@ -393,7 +485,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             DWORD window_style = WS_CAPTION | WS_SYSMENU | WS_SIZEBOX;
             AdjustWindowRectEx(&client_rect, window_style, false, 0);
             game.window_width = client_rect.right - client_rect.left;
-            game.window_height = client_rect.bottom - client_rect.top;
+            game.window_height = client_rect.bottom - client_rect.top;            
         
             hwnd = CreateWindowEx(0,
                                   class_name,
@@ -412,11 +504,14 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
                 LOG_ERROR(&game.log, "failed to create the window", error);
                 error_code = 2;
             }
-        }
 
-        ShowWindow(hwnd, CmdShow);
-        UpdateWindow(hwnd);
-        log_str(&game.log, "win32 initialized");
+            GetClientRect(hwnd, &client_rect);
+            printf("%d x %d\n", client_rect.bottom, client_rect.top);
+
+            ShowWindow(hwnd, CmdShow);
+            UpdateWindow(hwnd);
+            log_str(&game.log, "win32 initialized");
+        }
     }
 
 
@@ -492,13 +587,62 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 
         //
         // Update and render
+        if (game.state == Game_State_Begin_Editing) {
+            game.editor.mouse.left_button.curr  = Mouse_Button_Up;
+            game.editor.mouse.left_button.prev  = Mouse_Button_Up;
+            game.editor.mouse.right_button.curr = Mouse_Button_Up;
+            game.editor.mouse.right_button.prev = Mouse_Button_Up;
+        }
+        
+        if (game.state == Game_State_Editing || game.state == Game_State_Begin_Editing) {            
+            POINT Pm;
+            GetCursorPos(&Pm);
+            ScreenToClient(hwnd, &Pm);
+            GetClientRect(hwnd, &client_rect);
+
+            Level_Editor *editor = &game.editor;
+            Mouse_Input *mouse = &editor->mouse;
+            
+            if (PtInRect(&client_rect, Pm)) {
+                mouse->position = V2(static_cast<f32>(Pm.x), static_cast<f32>(client_rect.bottom - Pm.y));
+                mouse->is_inside = true;
+
+                u32 constexpr key_codes[] = {VK_LBUTTON, VK_RBUTTON};
+                for (u32 index = 0; index < 2; ++index) {
+                    mouse->buttons[index].prev = mouse->buttons[index].curr;
+                    u16 button_state = GetKeyState(key_codes[index]);
+
+                    b32 button_is_down = button_state & 0x8000;
+                    if (button_is_down && (mouse->buttons[index].prev == Mouse_Button_Up)) {
+                        mouse->buttons[index].curr = Mouse_Button_Pressed;
+                    }
+                    else if (button_is_down && (mouse->buttons[index].prev == Mouse_Button_Pressed)) {
+                        mouse->buttons[index].curr = Mouse_Button_Down;
+                    }
+                    else if (!button_is_down && (mouse->buttons[index].prev == Mouse_Button_Down)) {
+                        mouse->buttons[index].curr = Mouse_Button_Released;
+                    }
+                    else if (!button_is_down && (mouse->buttons[index].prev == Mouse_Button_Released)) {
+                        mouse->buttons[index].curr = Mouse_Button_Up;
+                    }
+                }
+            }
+            else {
+                mouse->is_inside = false;
+                mouse->position = V2(-1, -1);
+            }
+        }
+
+
+        //
+        // Update and render game
         b32 should_quit = false;
         update_and_render(&game, kFrame_Time, &should_quit);
         if (should_quit) {
             PostMessage(hwnd, WM_CLOSE, 0, 0);
         }
-      
-                
+
+        
         //
         // Draw backbuffer to screen
         InvalidateRect(hwnd, nullptr, false);

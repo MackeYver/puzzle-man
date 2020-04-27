@@ -66,6 +66,14 @@ struct Tile {
 // Implementation
 //
 
+Tile empty_tile_of_type(Tile_Type type) {
+    Tile tile;
+    tile.item.type = Item_Type_None;
+    tile.actor_id = {0xFFFF, 0xFFFF};
+    tile.type = type;
+    return tile;
+}
+
 b32 tile_has_wall(Tile *tile) {
     b32 result = false;
 
@@ -88,7 +96,11 @@ void draw_tile(Render_State *render_state, Resources *resources, Tile *tile, v2u
         if (tile_has_wall(tile)) {
             draw_bitmap(render_state, P, &resources->bitmaps.walls[tile->type]);
         }
+    }
+}
 
+void draw_item(Render_State *render_state, Resources *resources, Tile *tile, v2u P) {
+    if (tile) {
         if (tile->item.type == Item_Type_Dot_Small) {
             draw_bitmap(render_state, P, &resources->bitmaps.dot_small);
         }

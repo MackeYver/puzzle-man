@@ -5,14 +5,14 @@
 
 enum Game_State {
     Game_State_Playing,
-    Game_State_Editor,
+    Game_State_Begin_Editing,
+    Game_State_Editing,
+    Game_State_End_Editing,
     Game_State_Won,
     Game_State_Lost,
     
     Game_State_Count,
 };
-
-
 
 
 struct Game {  
@@ -22,9 +22,10 @@ struct Game {
     Resources resources;
     
     Level current_level;
+    Level_Editor editor;
 
-    s32 *maps[Map_Count] = {};
-    u32 current_map_index = Map_Count; // DEBUG
+    // s32 *maps[Map_Count] = {};
+    // u32 current_map_index = Map_Count; // DEBUG
 
     u32 microseconds_since_start = 0;
 
@@ -32,16 +33,12 @@ struct Game {
 
     Log log;
 
-    Game_State state = Game_State_Playing;
-    u32 window_width = 0;
+    Game_State state  = Game_State_Playing;
+    u32 render_mode   = Level_Render_Mode_All;
+    u32 window_width  = 0;
     u32 window_height = 0;
     Input input = Input_None;
-
-    u32 draw_grid_mode = 0;
 };
-
-
-#include "editor.cpp"
 
 
 b32 init_game(Game *game) {
@@ -114,12 +111,11 @@ b32 init_game(Game *game) {
     //
     // Init game state
     init_array_of_moves(&game->all_the_moves);
-    game->state = Game_State_Playing;
-    game->current_map_index = Map_Count; // DEBUG
+    game->state = Game_State_Playing;    
 
     result = load_level_from_disc(&game->current_level, &game->resources, "test.level_txt");
     if (result) {
-        create_maps_off_level(game->maps, &game->current_level);
+        create_maps_off_level(&game->current_level);
         game->state = Game_State_Playing;
     }
     else {
@@ -131,16 +127,9 @@ b32 init_game(Game *game) {
 
 
 void fini_game(Game *game) {
+    fini_editor(&game->editor);
     fini_level(&game->current_level);
     free_resources(&game->resources);
-
-    for (u32 map_index = 0; map_index < Map_Count; ++map_index) {
-        if (game->maps[map_index]) {
-            free(game->maps[map_index]);
-            game->maps[map_index] = nullptr;
-        }
-    }
-
     free_array_of_moves(&game->all_the_moves);
 }
 
@@ -150,17 +139,6 @@ void fini_game(Game *game) {
 //
 // Change game state
 //
-
-void reset(Game *game) {
-    game->state = Game_State_Playing;
-    
-    Level *level = &game->current_level;
-    u32 index = get_first_level_state_index(level);
-    level->current_state_index = index;
-    level->current_state = get_level_state_n(level, index);
-    create_maps_off_level(game->maps, level);
-}
-
 
 void change_to_next_level(Game *game) {    
 }
@@ -182,25 +160,24 @@ void defeat(Game *game) {
 }
 
 
-void undo(Game *game) {
-    Level *level = &game->current_level;
-    u32 prev_index = get_prev_valid_level_state_index(level);
-    
+void reset(Game *game) {
     game->state = Game_State_Playing;
-    level->current_state_index = prev_index;
-    level->current_state = get_level_state_n(level, prev_index);
-    create_maps_off_level(game->maps, &game->current_level);
+    reset_level(&game->current_level);
+    create_maps_off_level(&game->current_level);
+}
+
+
+void undo(Game *game) {    
+    game->state = Game_State_Playing;
+    undo_one_level_state(&game->current_level);
+    create_maps_off_level(&game->current_level);
 }
 
 
 void redo(Game *game) {
-    Level *level = &game->current_level;
-    u32 next_index = get_next_valid_level_state_index(level);
-    
     game->state = Game_State_Playing;
-    level->current_state_index = next_index;
-    level->current_state = get_level_state_n(level, next_index);
-    create_maps_off_level(game->maps, &game->current_level);
+    redo_one_level_state(&game->current_level);
+    create_maps_off_level(&game->current_level);
 }
 
 
@@ -213,178 +190,26 @@ void redo(Game *game) {
 void draw_level(Game *game) {
     Level *level = &game->current_level;
     Render_State *render_state = &game->render_state;
-        
-    u32 cell_size = render_state->backbuffer_width / level->width;
-    assert(cell_size == kCell_Size);
-
-    u32 level_width = level->width;
-    u32 level_height = level->height;
+    Font *font = &level->resources->font;
 
 
     //
     // Draw level
-    draw_current_level(render_state, level, game->microseconds_since_start);
-    
-
-        
-    //
-    // Draw background
-#if 0
-    for (u32 y = 0; y < level_height; ++y) {
-        for (u32 x = 0; x < level_width; ++x) {
-            v2u P = V2u(cell_size * x, cell_size * y);
-
-            if (game.resources.background.data) {
-                draw_bitmap(render_state, P, &game.resources.background);
-            }
-        }
-    }
-#endif
-
-    
-    //
-    // Draw grid
-    if (game->draw_grid_mode > 0) {
-        v4u8 const border_colour = {255, 255, 255, 75};
-        for (u32 y = 0; y < level_height; ++y) {
-            for(u32 x = 0; x < level_width; ++x) {
-                Tile *tile = get_tile_at(level, x, y);
-                if (!tile_is_traversable(tile) && game->draw_grid_mode == 1) {                    
-                }
-                else {
-                    draw_rectangle_outline(render_state, V2u(kCell_Size * x, kCell_Size * y), kCell_Size, kCell_Size, border_colour);
-                }
-            }
-        }
-    }
+    draw_level(render_state, level, game->render_mode, game->microseconds_since_start);    
 
 
     //
-    // Draw maps, DEBUG
-    Font *font = &level->resources->font;
-    u32 current_map_index = game->current_map_index;
-    if (current_map_index < Map_Count && game->maps[current_map_index]) {
-        char text[10];
-
-        u32 constexpr kOffset_x = kCell_Size / 2;
-        u32 constexpr kOffset_y = kCell_Size / 2;
-        
-        for (u32 y = 0; y < level_height; ++y) {
-            for (u32 x = 0; x < level_width; ++x) {
-                u32 index = (level_width * y) + x;
-                s32 value = game->maps[current_map_index][index];
-                u32 error = _snprintf_s(text, 10, _TRUNCATE, "%d", value);
-                assert(error > 0);
-                
-                v2u text_dim = get_text_dim(font, text);
-                v2u half_text_dim = (text_dim / 2);
-                v2u text_pos = V2u(kCell_Size * x + kOffset_x,kCell_Size * y + kOffset_y);
-                if (half_text_dim.x <= text_dim.x && half_text_dim.y <= text_dim.y) {
-                    text_pos = text_pos - half_text_dim;
-                }
-
-                u32 count;
-                if (value > 0) {
-                    count = value > 99 ? 3 : value > 9 ? 2 : 1;
-                }
-                else {
-                    count = value < -99 ? 3 : value < -9 ? 2 : 1;
-                }
-
-                //v2u text_offset = (text_dim / count) / 7;
-                v2u text_offset = V2u(1, 1);
-
-                Tile *curr_tile = get_tile_at(level, V2u(x, y));
-                if (curr_tile && curr_tile->item.type > Item_Type_None) {
-                    text_pos.y = text_pos.y - kOffset_y + (kCell_Size / 8);
-                }
-                
-                print(render_state, font, text_pos, text, V4u8(100, 100, 100, 255));
-                print(render_state, font, text_pos + text_offset, text, v4u8_white);
-            }
-        }
-
-
-#ifdef DEBUG
-        char map_name_text[50];
-        u32 error = _snprintf_s(map_name_text, 50, _TRUNCATE, "Map: %s", kMap_Names[current_map_index]);
-        assert(error > 0);        
-        v2u text_dim = get_text_dim(font, map_name_text);
-        u32 char_width = text_dim.x / static_cast<u32>(strlen(map_name_text));
-        print(render_state, font, V2u(render_state->backbuffer_width - text_dim.x - char_width, 10), map_name_text);
-#endif
-    }
-
-
-    // Print actor index at the actors' location (or where the game thinks that the actor are)
-#if 1    
-    else {
-        // DEBUG
-        for (u32 y = 0; y < level_height; ++y) {
-            for (u32 x = 0; x < level_width; ++x) {
-                Tile *tile = get_tile_at(level, V2u(x, y));
-
-                if (tile->actor_id.index != 0xFFFF) {
-                    Actor *actor = get_actor(&level->current_state->actors, tile->actor_id);
-                    if (actor && actor->type != Actor_Type_Pacman) {
-                        u32 constexpr kOffset_x = kCell_Size / 2;
-                        u32 constexpr kOffset_y = kCell_Size / 2;        
-                        char text[10];
-
-                        u32 value = tile->actor_id.index;
-                        u32 error = _snprintf_s(text, 10, "%d", value);
-                        assert(error > 0);
-                
-                        v2u text_dim = get_text_dim(font, text);
-                        v2u half_text_dim = (text_dim / 2);
-                        v2u text_pos = V2u(kCell_Size * x + kOffset_x, kCell_Size * y + kOffset_y);
-                        if (half_text_dim.x <= text_dim.x && half_text_dim.y <= text_dim.y) {
-                            text_pos = text_pos - half_text_dim;
-                        }
-
-                        u32 count;
-                        if (value > 0) {
-                            count = value > 99 ? 3 : value > 9 ? 2 : 1;
-                        }
-                        else {
-                            count = value < -99 ? 3 : value < -9 ? 2 : 1;
-                        }
-                        v2u text_offset = (text_dim / count) / 8;
-
-                        text_pos = V2u(kCell_Size * x, kCell_Size * y);
-                        print(render_state, font, text_pos, text, v4u8_black);
-                        print(render_state, font, text_pos + text_offset, text, v4u8_white);
-                    }
-                }
-            }
-        }
-    }
-#endif
+    // Draw maps
+    draw_maps(render_state, level, level->maps, level->current_map_index);
 
     
     //
     // Draw win/defeat if relevant
     if (game->state == Game_State_Won) {
-        char const *win_text = "VICTORIOUS!";
-        v2u text_dim = get_text_dim(font, win_text);
-        print(render_state, font, V2u((render_state->backbuffer_width - text_dim.x) / 2, 300), win_text, v4u8_green);
-        
-        if (game->input == Input_Select) {
-            reset(game);
-        }
+        draw_level_win_text(render_state, font);
     }
     else if (game->state == Game_State_Lost) {
-        char const *lost_text = "DEFEATED!";
-        v2u text_dim = get_text_dim(font, lost_text);
-        print(render_state, font, V2u((render_state->backbuffer_width - text_dim.x) / 2, 300), lost_text, v4u8_red);
-        
-        char const *text = "Press Enter or R to reset level and try again!";
-        text_dim = get_text_dim(font, text);
-        print(render_state, font, V2u((render_state->backbuffer_width - text_dim.x) / 2, 270), text, v4u8_white);
-
-        if (game->input == Input_Select) {
-            reset(game);
-        }
+        draw_level_lost_text(render_state, font);
     }
 }
 
@@ -401,9 +226,16 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
 
     
     //
-    // Play the game
-    if (game->state == Game_State_Editor) {
-        edit_level(game);
+    // Play the game    
+    if (game->state == Game_State_Won) {
+        if (game->input == Input_Select) {
+            reset(game);
+        }
+    }
+    else if (game->state == Game_State_Lost) {
+        if (game->input == Input_Select) {
+            reset(game);
+        }
     }
     else if (game->state == Game_State_Playing) {
         Level_State *level_state = level->current_state;
@@ -419,8 +251,17 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
             play_wav(&game->audio_state, &game->resources.wavs.lost);
         }            
         else if (game->input < Input_Select) {
-            collect_all_moves(game->maps, &game->all_the_moves, &game->input, level);
+            #ifdef DEBUG
+            debug_check_all_actors(level);
+            #endif
+                
+            collect_all_moves(level->maps, &game->all_the_moves, &game->input, level);
             u32 valid_moves = resolve_all_moves(&game->all_the_moves, level);
+                
+            #ifdef DEBUG
+            debug_check_all_move_sets(&game->all_the_moves);
+            debug_check_all_actors(level);
+            #endif
         
             if (valid_moves == 0) {
                 cancel_moves(&game->all_the_moves, level);
@@ -430,9 +271,6 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
                 // We're moving and thus we need to save the state and recalulate the "dijkstra maps".
                 save_current_level_state(level);
                 level_state = level->current_state;
-
-                u32 static debug_counter = 0;
-                printf("Round %u\n", ++debug_counter);
 
                 debug_check_all_actors(level);
                 accept_moves(&game->all_the_moves, &game->audio_state, &game->resources.wavs, level);
@@ -447,15 +285,29 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
                 }                
         
                 // Update "dijkstra-maps"
-                create_maps_off_level(game->maps, level);
+                create_maps_off_level(level);
             }
             
             clear_array_of_moves(&game->all_the_moves);            
         }
     }
     
-    draw_level(game);
-    game->input = Input_None;  
+
+    if (game->state == Game_State_Begin_Editing) {
+        begin_editing(&game->editor, level);
+        game->state = Game_State_Editing;
+    }
+    else if (game->state == Game_State_End_Editing) {
+        end_editing(&game->editor, &game->current_level);
+        game->state = Game_State_Playing;
+    }
+    else if (game->state == Game_State_Editing) {
+        edit_level(&game->editor, &game->render_state, game->input, game->microseconds_since_start);
+    }
+    else {
+        draw_level(game);
+    }
+    
     
     //
     // NOTE: For now we'll assume that we always are able to keep the framerate.
@@ -466,4 +318,6 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
     else {
         game->microseconds_since_start = 0;
     }
+
+    game->input = Input_None;
 }

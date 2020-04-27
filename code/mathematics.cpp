@@ -55,6 +55,16 @@ v2u operator / (v2u A, u32 b) {
     return result;
 }
 
+v2u operator * (v2u A, u32 b) {
+    v2u result = V2u(A.x * b, A.y * b);
+    return result;
+}
+
+v2u operator * (u32 a, v2u B) {
+    v2u result = B * a;
+    return result;
+}
+
 v2u operator - (v2u A, v2u B) {
     v2u result = V2u(A.x - B.x, A.y - B.y);
     return result;
@@ -62,6 +72,11 @@ v2u operator - (v2u A, v2u B) {
 
 v2u operator + (v2u A, v2u B) {
     v2u result = V2u(A.x + B.x, A.y + B.y);
+    return result;
+}
+
+v2u operator * (v2u A, v2u B) {
+    v2u result = V2u(A.x * B.x, A.y * B.y);
     return result;
 }
 
@@ -104,6 +119,55 @@ v2s operator + (v2s A, v2s B) {
     return result;
 }
 
+
+
+
+
+//
+// v2
+//
+
+union v2 {
+    struct {
+        f32 x;
+        f32 y;
+    };
+    struct {
+        f32 width;
+        f32 gheight;
+    };
+    f32 e[3];    
+};
+
+v2 V2(f32 x, f32 y) {
+    v2 result = {x, y};
+    return result;
+};
+
+v2 operator * (v2 A, v2 B) {
+    v2 result = {A.x * B.x, A.y * B.y};
+    return result;
+}
+
+v2 operator * (f32 a, v2 B) {
+    v2 result = {a * B.x, a * B.y};
+    return result;
+}
+
+v2 operator * (v2 A, f32 b) {
+    v2 result = b * A;
+    return result;
+}
+
+v2 operator + (v2 A, v2 B) {
+    v2 result = {A.x + B.x, A.y + B.y};
+    return result;
+}
+
+v2 clamp_01(v2 A) {
+    v2 result = {clamp_01(A.x), clamp_01(A.y)};
+    return result;
+}
 
 
 
