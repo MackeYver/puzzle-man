@@ -4,7 +4,7 @@
 
 
 struct Renderer {
-    virtual b32 init(HWND hwnd, u32 width, u32 height, Log *log) = 0;
+    virtual b32 init(Log *log, u32 width, u32 height) = 0;
 
     virtual void clear(v4u8 clear_colour) = 0;
 

@@ -469,7 +469,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         b32 result = init_renderer(&game.render_state, &game.log, hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
         #else
         game.renderer = new Renderer_Software_win32();
-        b32 result = game.renderer->init(hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height, &game.log);        
+        b32 result = static_cast<Renderer_Software_win32 *>(game.renderer)->init_win32(hwnd, &game.log, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
         #endif
         if (!result) {            
             LOG_ERROR(&game.log, "failed to initialize the software renderer", result);

@@ -10,7 +10,8 @@ struct Renderer_Software_win32 : public Renderer {
     // Methods
     Renderer_Software_win32() {};
     ~Renderer_Software_win32();
-    b32 init(HWND hwnd, u32 width, u32 height, Log *log) final override;
+    b32 init(Log *log, u32 width, u32 height) final override;
+    b32 init_win32(HWND hwnd, Log *log, u32 width, u32 height);
 
     void clear(v4u8 clear_colour) final override;
 
@@ -56,13 +57,12 @@ void Renderer_Software_win32_fini(Renderer_Software_win32 *renderer) {
 }
 
 
-b32 Renderer_Software_win32::init(HWND _hwnd, u32 width, u32 height, Log *_log) {
+b32 Renderer_Software_win32::init(Log *_log, u32 width, u32 height) {
     b32 result = true;
 
     this->log = _log;
     this->backbuffer_width = width;
     this->backbuffer_height = height;
-    this->hwnd = _hwnd;
         
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biWidth = width;
@@ -107,6 +107,13 @@ b32 Renderer_Software_win32::init(HWND _hwnd, u32 width, u32 height, Log *_log) 
         ReleaseDC(hwnd, hdc);
     }
 
+    return result;
+}
+
+
+b32 Renderer_Software_win32::init_win32(HWND _hwnd, Log *_log, u32 width, u32 height) {
+    this->hwnd = _hwnd;
+    b32 result = init(_log, width, height);
     return result;
 }
 
