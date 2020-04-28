@@ -96,6 +96,9 @@ void draw_tile(Render_State *render_state, Resources *resources, Tile *tile, v2u
         if (tile_has_wall(tile)) {
             draw_bitmap(render_state, P, &resources->bitmaps.walls[tile->type]);
         }
+        else if (tile->type == Tile_Type_None) {
+            draw_bitmap(render_state, P, &resources->bitmaps.background);
+        }
     }
 }
 
