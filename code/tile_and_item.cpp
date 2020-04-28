@@ -91,24 +91,28 @@ b32 tile_is_traversable(Tile *tile) {
 }
 
 
-void draw_tile(Render_State *render_state, Resources *resources, Tile *tile, v2u P) {
+void draw_tile(Renderer *renderer, Resources *resources, Tile *tile, v2u P) {
     if (tile) {
         if (tile_has_wall(tile)) {
-            draw_bitmap(render_state, P, &resources->bitmaps.walls[tile->type]);
+            //draw_bitmap(render_state, P, &resources->bitmaps.walls[tile->type]);
+            renderer->draw_bitmap(P, &resources->bitmaps.walls[tile->type]);
         }
         else if (tile->type == Tile_Type_None) {
-            draw_bitmap(render_state, P, &resources->bitmaps.background);
+            //draw_bitmap(render_state, P, &resources->bitmaps.background);
+            renderer->draw_bitmap(P, &resources->bitmaps.background);
         }
     }
 }
 
-void draw_item(Render_State *render_state, Resources *resources, Tile *tile, v2u P) {
+void draw_item(Renderer *renderer, Resources *resources, Tile *tile, v2u P) {
     if (tile) {
         if (tile->item.type == Item_Type_Dot_Small) {
-            draw_bitmap(render_state, P, &resources->bitmaps.dot_small);
+            //draw_bitmap(render_state, P, &resources->bitmaps.dot_small);
+            renderer->draw_bitmap(P, &resources->bitmaps.dot_small);
         }
         else if (tile->item.type == Item_Type_Dot_Large) {
-            draw_bitmap(render_state, P, &resources->bitmaps.dot_large);
+            //draw_bitmap(render_state, P, &resources->bitmaps.dot_large);
+            renderer->draw_bitmap(P, &resources->bitmaps.dot_large);
         }
     }
 }

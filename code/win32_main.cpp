@@ -167,7 +167,8 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
 #include "mathematics.cpp"
 #include "bitmap.cpp"
 #include "font.cpp"
-#include "win32_software_renderer.cpp"
+//#include "win32_software_renderer.cpp"
+#include "renderer_software_win32.cpp"
 #include "resources.cpp"
 #include "actor.cpp"
 #include "tile_and_item.cpp"
@@ -202,64 +203,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
         // case WM_SIZE: {            
         // } break;
 
-        case WM_PAINT: {
-            Game *game = reinterpret_cast<Game *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
-            if (game) {
-                Render_State *render_state = &game->render_state;
-                if (render_state) {
-                    PAINTSTRUCT ps;
-                    HDC hdc = BeginPaint(hwnd, &ps);
-
-#if 0
-                    b32 result = BitBlt(hdc, 0, 0, render_state->backbuffer_width, render_state->backbuffer_height,
-                                        render_state->backbuffer_hdc, 0, 0, SRCCOPY);
-                    result;
-#else                    
-                    
-                    RECT client_rect;
-                    GetClientRect(hwnd, &client_rect);
-                    s32 window_w = client_rect.right - client_rect.left;
-                    s32 window_h = client_rect.bottom - client_rect.top;
-                    
-                    s32 dst_w = window_w;
-                    s32 dst_h = window_h;
-
-                    s32 src_w = render_state->backbuffer_width;
-                    s32 src_h = render_state->backbuffer_height;
-
-                    //
-                    // "float-space"
-                    f32 aspect_ratio = static_cast<f32>(src_w) / static_cast<f32>(src_h);
-                    f32 w0 = static_cast<f32>(dst_w);
-                    f32 h0 = static_cast<f32>(dst_h);
-                    f32 w = w0;
-                    f32 h = h0;
-
-                    h = w / aspect_ratio;
-                    if (h > h0) {
-                        h = h0;
-                        w = aspect_ratio * h;
-                    }
-
-                    dst_w = static_cast<s32>(w);
-                    dst_h = static_cast<s32>(h);
-                    
-                    //
-                    // "s32-space"
-                    s32 dx = (window_w - dst_w) / 2;
-                    s32 dy = (window_h - dst_h) / 2;
-                    
-                    b32 result = StretchBlt(hdc,
-                                            dx, dy, dst_w, dst_h,
-                                            render_state->backbuffer_hdc,
-                                            0, 0, src_w, src_h,
-                                            SRCCOPY);
-                    result;
-#endif
-                    EndPaint(hwnd, &ps);
-                }
-            }
-        } break;
+        // case WM_PAINT: {            
+        // } break;
 
         case WM_KEYDOWN: {
             Game *game = reinterpret_cast<Game *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
@@ -520,13 +465,18 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     // Init renderer and audio
     if (error_code == 0)
     {
+        #if 0
         b32 result = init_renderer(&game.render_state, &game.log, hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
+        #else
+        game.renderer = new Renderer_Software_win32();
+        b32 result = game.renderer->init(hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height, &game.log);        
+        #endif
         if (!result) {            
             LOG_ERROR(&game.log, "failed to initialize the software renderer", result);
             error_code = 3;
         }
         else {
-            log_str(&game.log, "Software renderer initialized");
+            log_str(&game.log, "Renderer initialized");
             
             result = init_audio(&game.audio_state, &game.log);
             if (!result) {
@@ -642,11 +592,15 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             PostMessage(hwnd, WM_CLOSE, 0, 0);
         }
 
-        
+
+        #if 0
         //
         // Draw backbuffer to screen
         InvalidateRect(hwnd, nullptr, false);
         UpdateWindow(hwnd);
+        #else
+        game.renderer->draw_to_screen();
+#endif
 
 
         //
@@ -681,7 +635,8 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     // Quit the program
     fini_game(&game);    
     fini_audio(&game.audio_state);    
-    fini_renderer(&game.render_state);
+    //fini_renderer(&game.render_state);
+    delete game.renderer;
 
 #ifdef DEBUG
     _CrtDumpMemoryLeaks();

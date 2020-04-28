@@ -17,21 +17,18 @@ enum Game_State {
 
 struct Game {  
     // Systems
-    Render_State render_state;
+    //Render_State render_state;
+    Renderer *renderer = nullptr;
     Audio_State audio_state;    
     Resources resources;
+    Log log;
     
     Level current_level;
     Level_Editor editor;
 
-    // s32 *maps[Map_Count] = {};
-    // u32 current_map_index = Map_Count; // DEBUG
-
     u32 microseconds_since_start = 0;
 
     Array_Of_Moves all_the_moves;
-
-    Log log;
 
     Game_State state  = Game_State_Playing;
     u32 render_mode   = Level_Render_Mode_All;
@@ -189,27 +186,28 @@ void redo(Game *game) {
 
 void draw_level(Game *game) {
     Level *level = &game->current_level;
-    Render_State *render_state = &game->render_state;
+    //Render_State *render_state = &game->render_state;
+    Renderer *renderer = game->renderer;
     Font *font = &level->resources->font;
 
 
     //
     // Draw level
-    draw_level(render_state, level, game->render_mode, game->microseconds_since_start);    
+    draw_level(renderer, level, game->render_mode, game->microseconds_since_start);    
 
 
     //
     // Draw maps
-    draw_maps(render_state, level, level->maps, level->current_map_index);
+    draw_maps(renderer, level, level->maps, level->current_map_index);
 
     
     //
     // Draw win/defeat if relevant
     if (game->state == Game_State_Won) {
-        draw_level_win_text(render_state, font);
+        draw_level_win_text(renderer, font);
     }
     else if (game->state == Game_State_Lost) {
-        draw_level_lost_text(render_state, font);
+        draw_level_lost_text(renderer, font);
     }
 }
 
@@ -222,7 +220,8 @@ void draw_level(Game *game) {
 
 void update_and_render(Game *game, f32 dt, b32 *should_quit) {
     Level *level = &game->current_level;
-    clear_backbuffer(&game->render_state);
+    //clear_backbuffer(&game->render_state);
+    game->renderer->clear(v4u8_black);
 
     
     //
@@ -302,7 +301,7 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
         game->state = Game_State_Playing;
     }
     else if (game->state == Game_State_Editing) {
-        edit_level(&game->editor, &game->render_state, game->input, game->microseconds_since_start);
+        edit_level(&game->editor, game->renderer, game->input, game->microseconds_since_start);
     }
     else {
         draw_level(game);

@@ -101,7 +101,7 @@ static void end_editing(Level_Editor *editor, Level *level) {
 }
 
 
-static void edit_level(Level_Editor *editor, Render_State *render_state, Input input, u32 microseconds_since_start) {
+static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u32 microseconds_since_start) {
     Level *level = &editor->level;
     Font *font = &level->resources->font;
     Mouse_Input *mouse = &editor->mouse;
@@ -109,7 +109,7 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
     
     //
     // TODO: handle window and cell sizes properly!
-    u32 cell_size = render_state->backbuffer_width / level->width;
+    u32 cell_size = renderer->get_backbuffer_width() / level->width;
     assert(cell_size == cell_size);
 
 
@@ -119,7 +119,8 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
     {
         char const *text = "Editor";
         v2u text_dim = get_text_dim(font, text);
-        print(render_state, font, V2u(render_state->backbuffer_width - text_dim.x - 10, 10), text);
+        //print(render_state, font, V2u(render_state->backbuffer_width - text_dim.x - 10, 10), text);
+        renderer->print(font, V2u(renderer->get_backbuffer_width() - text_dim.x - 10, 10), text);
     }
 
 
@@ -149,7 +150,8 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
                 Tile *tile = get_tile_at(&editor->level, Pmc);
                 editor->hot_tile = tile;
 
-                draw_rectangle_outline(render_state, P, static_cast<u32>(cell_size), static_cast<u32>(cell_size), v4u8_yellow);
+                //draw_rectangle_outline(render_state, P, static_cast<u32>(cell_size), static_cast<u32>(cell_size), v4u8_yellow);
+                renderer->draw_rectangle_outline(P, static_cast<u32>(cell_size), static_cast<u32>(cell_size), v4u8_yellow);
             }
 
             if (editor->hot_tile) {
@@ -189,8 +191,8 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
     
         //
         // Render
-        draw_level(render_state, level, editor->render_mode, microseconds_since_start);
-        draw_maps(render_state, level, level->maps, level->current_map_index);
+        draw_level(renderer, level, editor->render_mode, microseconds_since_start);
+        draw_maps(renderer, level, level->maps, level->current_map_index);
     }
 
 
@@ -211,7 +213,8 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
 
         char const *text = "Tiles and items";
         v2u text_dim = get_text_dim(font, text);
-        print(render_state, font, V2u(cell_size, render_state->backbuffer_height - ((cell_size + text_dim.y) / 2)), text);
+        //print(render_state, font, V2u(cell_size, render_state->backbuffer_height - ((cell_size + text_dim.y) / 2)), text);
+        renderer->print(font, V2u(cell_size, renderer->get_backbuffer_height() - ((cell_size + text_dim.y) / 2)), text);
 
 
         //
@@ -227,7 +230,7 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
             if (index < tile_count) {
                 v2u P = V2u(cell_size * Pc.x, cell_size * Pc.y);
                 tile           = empty_tile_of_type(tiles[index]);                
-                draw_tile(render_state, editor->level.resources, &tile, P);
+                draw_tile(renderer, editor->level.resources, &tile, P);
 
                 if (mouse_is_inside && Pmc.x == (index + 1) && Pmc.y == level->height - 2) {
                     colour = v4u8_yellow;
@@ -244,14 +247,15 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
                 else {
                     colour = v4u8_white;
                 }
-                draw_rectangle_outline(render_state, P, cell_size, cell_size, colour);
+                //draw_rectangle_outline(render_state, P, cell_size, cell_size, colour);
+                renderer->draw_rectangle_outline(P, cell_size, cell_size, colour);
             }
 
             if (index < item_count) {
                 v2u P = V2u(cell_size * Pc.x, cell_size * (Pc.y - 1));
                 tile           = empty_tile_of_type(Tile_Type_None);
                 tile.item.type = items[index];
-                draw_item(render_state, editor->level.resources, &tile, P);
+                draw_item(renderer, editor->level.resources, &tile, P);
                 
                 if (mouse_is_inside && Pmc.x == (index + 1) && Pmc.y == level->height - 3) {
                     colour = v4u8_yellow;
@@ -268,7 +272,8 @@ static void edit_level(Level_Editor *editor, Render_State *render_state, Input i
                 else {
                     colour = v4u8_white;
                 }
-                draw_rectangle_outline(render_state, P, cell_size, cell_size, colour);
+                //draw_rectangle_outline(render_state, P, cell_size, cell_size, colour);
+                renderer->draw_rectangle_outline(P, cell_size, cell_size, colour);
             }            
 
             ++Pc.x;

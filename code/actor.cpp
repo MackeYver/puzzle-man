@@ -319,7 +319,7 @@ b32 actor_is_prey(Actor *actor) {
 }
 
 
-void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, Actor *pacman, f32 cos_x, f32 sin_y) {  
+void draw_ghost(Renderer *renderer, Resources *resources, Actor *actor, Actor *pacman, f32 cos_x, f32 sin_y) {  
     Bmp *ghost_bitmap = nullptr;    
         
     if (actor->mode == Actor_Mode_Prey) {
@@ -350,14 +350,18 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
             x_off = Pax < 0.0f ? static_cast<u32>(ceilf(-1.0f * Pax)) : 0;
             y_off = Pay < 0.0f ? static_cast<u32>(ceilf(-1.0f * Pay)) : 0;
 
-            draw_bitmap(render_state, P, ghost_bitmap, x_off, y_off, ghost_bitmap->header.width, ghost_bitmap->header.height);
+            //draw_bitmap(render_state, P, ghost_bitmap, x_off, y_off, ghost_bitmap->header.width, ghost_bitmap->header.height);
+            renderer->draw_bitmap(P, ghost_bitmap, x_off, y_off, ghost_bitmap->header.width, ghost_bitmap->header.height);
             Bmp *eye_bitmap = &resources->bitmaps.ghost_eye;
-            draw_bitmap(render_state, P, eye_bitmap, x_off, y_off, eye_bitmap->header.width, eye_bitmap->header.height);
+            //draw_bitmap(render_state, P, eye_bitmap, x_off, y_off, eye_bitmap->header.width, eye_bitmap->header.height);
+            renderer->draw_bitmap(P, eye_bitmap, x_off, y_off, eye_bitmap->header.width, eye_bitmap->header.height);
         }
         else {
             P = V2u(static_cast<u32>(Pax), static_cast<u32>(Pay));
-            draw_bitmap(render_state, P, ghost_bitmap);
-            draw_bitmap(render_state, P, &resources->bitmaps.ghost_eye);
+            //draw_bitmap(render_state, P, ghost_bitmap);
+            //draw_bitmap(render_state, P, &resources->bitmaps.ghost_eye);
+            renderer->draw_bitmap(P, ghost_bitmap);
+            renderer->draw_bitmap(P, &resources->bitmaps.ghost_eye);
         }
     }
                 
@@ -380,7 +384,8 @@ void draw_ghost(Render_State *render_state, Resources *resources, Actor *actor, 
             P = V2u(static_cast<u32>(Px), static_cast<u32>(Py));
         }
     }    
-    draw_bitmap(render_state, P, &resources->bitmaps.ghost_pupil);
+    //draw_bitmap(render_state, P, &resources->bitmaps.ghost_pupil);
+    renderer->draw_bitmap(P, &resources->bitmaps.ghost_pupil);
 }
 
 
@@ -393,7 +398,7 @@ void kill_actor(Array_Of_Actors *array, Actor *actor) {
 }
 
 
-void draw_pacman(Render_State *render_state, Resources *resources, Actor *actor, u32 int_t) {
+void draw_pacman(Renderer *renderer, Resources *resources, Actor *actor, u32 int_t) {
     v2u P = V2u(kCell_Size * actor->position.x, kCell_Size * actor->position.y);
     
     f32 constexpr duration = 0.6f;
@@ -405,5 +410,6 @@ void draw_pacman(Render_State *render_state, Resources *resources, Actor *actor,
     
     u32 x = 64 * static_cast<u32>(actor->direction);
     u32 y = 64 * static_cast<u32>(floor(t));
-    draw_bitmap(render_state, P, &resources->bitmaps.pacman_atlas, x, y, x + 64, y + 64);
+    //draw_bitmap(render_state, P, &resources->bitmaps.pacman_atlas, x, y, x + 64, y + 64);
+    renderer->draw_bitmap(P, &resources->bitmaps.pacman_atlas, x, y, x + 64, y + 64);
 }
