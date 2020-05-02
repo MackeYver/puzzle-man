@@ -116,7 +116,9 @@ b32 win32_read_entire_file(char const *path_and_name, u8 **data, u32 *size) {
     return result;
 }
 
-HANDLE win32_open_file_for_writing(char const *path_and_name) {
+b32  win32_open_file_for_writing(char const *path_and_name, HANDLE *handle) {
+    b32 result = true;
+    
     size_t length = strlen(path_and_name) + 1;
     assert(length < MAX_PATH);
     wchar_t text_buffer[MAX_PATH];
@@ -125,13 +127,15 @@ HANDLE win32_open_file_for_writing(char const *path_and_name) {
     mbstowcs_s(&converted, text_buffer, sizeof(text_buffer) / sizeof(wchar_t), path_and_name, length);
     assert(converted == length);
     
-    HANDLE file = CreateFile(text_buffer, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
+    *handle = CreateFile(text_buffer, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (*handle == INVALID_HANDLE_VALUE) {
         u32 error = GetLastError();
         printf("%s() failed to create file %s, error = %u\n", __FUNCTION__, path_and_name, error);
+        result = false;
+        *handle = nullptr;
     }
 
-    return file;
+    return result;
 }
 
 
@@ -167,8 +171,7 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
 #include "mathematics.cpp"
 #include "bitmap.cpp"
 #include "font.cpp"
-//#include "win32_software_renderer.cpp"
-#include "renderer_software_win32.cpp"
+#include "win32_software_renderer.cpp"
 #include "resources.cpp"
 #include "actor.cpp"
 #include "tile_and_item.cpp"
@@ -243,7 +246,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                     game->state = Game_State_Begin_Editing;
                 }
             }
-            else if (w_param ==0x31) { // 1
+            else if (w_param == 0x31) { // 1
                 u32 *render_mode = nullptr;
                 if (game->state == Game_State_Editing) {
                     render_mode = &game->editor.render_mode;
@@ -253,7 +256,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                 }
                 *render_mode ^= Level_Render_Mode_Tiles;
             }
-            else if (w_param ==0x32) { // 2
+            else if (w_param == 0x32) { // 2
                 u32 *render_mode = nullptr;
                 if (game->state == Game_State_Editing) {
                     render_mode = &game->editor.render_mode;
@@ -263,7 +266,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                 }
                 *render_mode ^= Level_Render_Mode_Items;
             }
-            else if (w_param ==0x33) { // 3
+            else if (w_param == 0x33) { // 3
                 u32 *render_mode = nullptr;
                 if (game->state == Game_State_Editing) {
                     render_mode = &game->editor.render_mode;
@@ -273,7 +276,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                 }
                 *render_mode ^= Level_Render_Mode_Actors;
             }
-            else if (w_param ==0x34) { // 4
+            else if (w_param == 0x34) { // 4
                 u32 *render_mode = nullptr;
                 if (game->state == Game_State_Editing) {
                     render_mode = &game->editor.render_mode;
@@ -385,6 +388,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     //
     // Allocate a console and direct the standard output to it
 #ifdef DEBUG
+    //CoInitialize(nullptr);
     AllocConsole();
     FILE* pcout;
     freopen_s(&pcout, "conout$", "w", stdout);
@@ -465,22 +469,17 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     // Init renderer and audio
     if (error_code == 0)
     {
-        #if 0
-        b32 result = init_renderer(&game.render_state, &game.log, hwnd, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
-        #else
         game.renderer = new Renderer_Software_win32();
         b32 result = static_cast<Renderer_Software_win32 *>(game.renderer)->init_win32(hwnd, &game.log, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
-        #endif
         if (!result) {            
             LOG_ERROR(&game.log, "failed to initialize the software renderer", result);
             error_code = 3;
         }
         else {
             log_str(&game.log, "Renderer initialized");
-            
-            result = init_audio(&game.audio_state, &game.log);
+             
+            result = init_audio(&game.audio, &game.log);
             if (!result) {
-                //printf("Error, failed to initialize the audio system\n");
                 LOG_ERROR(&game.log, "failed to initialize the audio system", result);
                 error_code = 4;
             }
@@ -634,15 +633,16 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     //
     // Quit the program
     fini_game(&game);    
-    fini_audio(&game.audio_state);    
-    //fini_renderer(&game.render_state);
+    fini_audio(&game.audio);    
     delete game.renderer;
 
 #ifdef DEBUG
     _CrtDumpMemoryLeaks();
 
     fclose(pcout);
+    fclose(stderr);
     FreeConsole();
+    //CoUninitialize();
 #endif
 
     close_log(&game.log);

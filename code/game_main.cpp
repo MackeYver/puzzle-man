@@ -17,9 +17,8 @@ enum Game_State {
 
 struct Game {  
     // Systems
-    //Render_State render_state;
-    Renderer *renderer = nullptr;
-    Audio_State audio_state;    
+    Renderer *renderer = nullptr;    
+    Audio audio;
     Resources resources;
     Log log;
     
@@ -43,58 +42,21 @@ b32 init_game(Game *game) {
     
     //
     // Load resources
-    // TODO: add error handling!
-    {   
-        Resources *resources = &game->resources;
-
-        log_str(&game->log, "loading resources...");
-        
-        // bitmaps
-        if (result)  result = load_bitmap("data\\bitmaps\\pacman.bmp", &resources->bitmaps.pacman);        
-        if (result)  result = load_bitmap("data\\bitmaps\\ghost_red.bmp", &resources->bitmaps.ghost_red);
-        if (result)  result = load_bitmap("data\\bitmaps\\ghost_pink.bmp", &resources->bitmaps.ghost_pink);
-        if (result)  result = load_bitmap("data\\bitmaps\\ghost_cyan.bmp", &resources->bitmaps.ghost_cyan);
-        if (result)  result = load_bitmap("data\\bitmaps\\ghost_orange.bmp", &resources->bitmaps.ghost_orange);
-        if (result)  result = load_bitmap("data\\bitmaps\\ghost_as_prey.bmp", &resources->bitmaps.ghost_as_prey);
-        if (result)  result = load_bitmap("data\\bitmaps\\ghost_eyes.bmp", &resources->bitmaps.ghost_eye);
-        if (result)  result = load_bitmap("data\\bitmaps\\ghost_pupils.bmp", &resources->bitmaps.ghost_pupil);
-        if (result)  result = load_bitmap("data\\bitmaps\\dot_large.bmp", &resources->bitmaps.dot_large);
-        if (result)  result = load_bitmap("data\\bitmaps\\dot_small.bmp", &resources->bitmaps.dot_small);
-        if (result)  result = load_bitmap("data\\bitmaps\\background.bmp", &resources->bitmaps.background);
-        if (result)  result = load_bitmap("data\\bitmaps\\pacman_atlas.bmp", &resources->bitmaps.pacman_atlas);
-
-        char path[24];
-        for (u32 index = 0; result && (index < 16); ++index) {
-            _snprintf_s(path, 24, _TRUNCATE, "data\\bitmaps\\wall%02u.bmp", index);
-            result = load_bitmap(path, &resources->bitmaps.walls[index]);
-        }
-        
-        // fonts
-        if (result)  result = load_font("data\\fonts", "font", &resources->font);
-        log_str(&game->log, "font loaded");
-    
-        // wavs
-        if (result)  result = load_wav("data\\audio\\eat_large_dot.wav", &resources->wavs.eat_large_dot);
-        if (result)  result = load_wav("data\\audio\\eat_small_dot.wav", &resources->wavs.eat_small_dot);
-        if (result)  result = load_wav("data\\audio\\ghost_dies.wav", &resources->wavs.ghost_dies);
-        if (result)  result = load_wav("data\\audio\\won.wav", &resources->wavs.won);
-        if (result)  result = load_wav("data\\audio\\lost.wav", &resources->wavs.lost);
-        if (result)  result = load_wav("data\\audio\\nope.wav", &resources->wavs.nope);
-
+    {
+        log_str(&game->log, "loading resources...");       
+        result = init_resources(&game->resources);
         if (!result) {
             LOG_ERROR(&game->log, "failed to load resources, is the data directory present?", 0);
         }
         else {
-            log_str(&game->log, "audio loaded");
-            log_str(&game->log, "all resources loaded");
-        }        
-
-
+            log_str(&game->log, "resources loaded");
+        }
+        
         
         // NOTE: Create a voice using a (somewhat) random wav file. If playing a wav with a different
         //       format (different bit rate, etc...) the voice will be destroyed and re-created.
         //       So this will not create any requirements of the wav formats.
-        result = init_voices(&game->audio_state, &game->resources.wavs.eat_small_dot);
+        result = init_voices(&game->audio, &game->resources.wavs.eat_small_dot);
         if (!result)  LOG_ERROR(&game->log, "failed to init voices", 0);
 
         game->microseconds_since_start = 0;
@@ -186,7 +148,6 @@ void redo(Game *game) {
 
 void draw_level(Game *game) {
     Level *level = &game->current_level;
-    //Render_State *render_state = &game->render_state;
     Renderer *renderer = game->renderer;
     Font *font = &level->resources->font;
 
@@ -220,7 +181,6 @@ void draw_level(Game *game) {
 
 void update_and_render(Game *game, f32 dt, b32 *should_quit) {
     Level *level = &game->current_level;
-    //clear_backbuffer(&game->render_state);
     game->renderer->clear(v4u8_black);
 
     
@@ -243,11 +203,11 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
         // Check for win-/loose-conditions
         if (level_state->pacman_count == 0) {
             victory(game);
-            play_wav(&game->audio_state, &game->resources.wavs.won);
+            play_wav(&game->audio, &game->resources.wavs.won);
         }
         else if (level_state->ghost_count == 0) {
             defeat(game);
-            play_wav(&game->audio_state, &game->resources.wavs.lost);
+            play_wav(&game->audio, &game->resources.wavs.lost);
         }            
         else if (game->input < Input_Select) {
             #ifdef DEBUG
@@ -264,7 +224,7 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
         
             if (valid_moves == 0) {
                 cancel_moves(&game->all_the_moves, level);
-                play_wav(&game->audio_state, &game->resources.wavs.nope); // No valid moves at all, we won't move until we have at least one valid!
+                play_wav(&game->audio, &game->resources.wavs.nope); // No valid moves at all, we won't move until we have at least one valid!
             }
             else {                
                 // We're moving and thus we need to save the state and recalulate the "dijkstra maps".
@@ -272,7 +232,7 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
                 level_state = level->current_state;
 
                 debug_check_all_actors(level);
-                accept_moves(&game->all_the_moves, &game->audio_state, &game->resources.wavs, level);
+                accept_moves(&game->all_the_moves, &game->audio, &game->resources.wavs, level);
                 debug_check_all_actors(level);
                 
                 // Update mode counter                    

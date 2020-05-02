@@ -468,7 +468,7 @@ Direction get_direction_from_move(v2u from, v2u to) {
 }
 
 
-void accept_moves(Array_Of_Moves *all_the_moves, Audio_State *audio, Wavs *wavs, Level *level) {
+void accept_moves(Array_Of_Moves *all_the_moves, Audio *audio, Wavs *wavs, Level *level) {
     Level_State *state = level->current_state;
     
     for (u32 move_set_index = 0; move_set_index < all_the_moves->count; ++move_set_index) {

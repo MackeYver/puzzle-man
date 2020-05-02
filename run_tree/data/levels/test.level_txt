@@ -1,11 +1,11 @@
-name:"race", width:11, height:11 {
+name:"two", width:11, height:11 {
         - - - - - - - - - - -
         - - - - - - - - - - -
         - - - - - - - - - - -
         - w w w w w - - - - -
-        - w . . . w w w w w -
-        - w . 1 . X . . P w -
-        - w . . . w w w w w -
+        - w . . 3 w w w w w -
+        - w . 1 . + . . P w -
+        - w . 2 1 w w w w w -
         - w w w w w - - - - -
         - - - - - - - - - - -
         - - - - - - - - - - -

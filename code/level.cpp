@@ -351,9 +351,11 @@ static void init_level_as_copy_of_level(Level *dst, Level *src, Level_State *sta
 
 Tile *get_tile_at(Level *level, v2u P) {
     Tile *result = nullptr;    
-    
-    if (P.x < level->width && P.y < level->height) {
-        result = &level->current_state->tiles[(level->width * P.y) + P.x];
+
+    if (level && level->current_state && level->current_state->tiles) {
+        if (P.x < level->width && P.y < level->height) {
+            result = &level->current_state->tiles[(level->width * P.y) + P.x];
+        }
     }
 
     return result;
@@ -478,7 +480,6 @@ void draw_level(Renderer *renderer, Level *level, u32 render_mode, u32 microseco
     //
     // Draw background
 #if 0
-    //u32 cell_size = render_state->backbuffer_width / level->width;
     u32 cell_size = renderer->backbuffer_width / level->width;
     assert(cell_size == kCell_Size);
     
@@ -487,7 +488,6 @@ void draw_level(Renderer *renderer, Level *level, u32 render_mode, u32 microseco
             v2u P = V2u(cell_size * x, cell_size * y);
 
             if (bitmaps->background.data) {
-                //draw_bitmap(render_state, &resources->bitmaps->background);
                 renderer->draw_bitmap(&resources->bitmaps->background);
             }
         }
@@ -518,7 +518,6 @@ void draw_level(Renderer *renderer, Level *level, u32 render_mode, u32 microseco
         v4u8 const border_colour = {255, 255, 255, 75};
         for (u32 y = 0; y < height; ++y) {
             for(u32 x = 0; x < width; ++x) {
-                //draw_rectangle_outline(render_state, V2u(kCell_Size * x, kCell_Size * y), kCell_Size, kCell_Size, border_colour);
                 renderer->draw_rectangle_outline(V2u(kCell_Size * x, kCell_Size * y), kCell_Size, kCell_Size, border_colour);
             }
         }
@@ -581,8 +580,6 @@ void draw_level(Renderer *renderer, Level *level, u32 render_mode, u32 microseco
                     v2u text_offset = (text_dim / count) / 8;
 
                     text_pos = V2u(kCell_Size * x, kCell_Size * y);
-                    //print(render_state, font, text_pos, text, v4u8_black);
-                    //print(render_state, font, text_pos + text_offset, text, v4u8_white);
                     renderer->print(font, text_pos, text, v4u8_black);
                     renderer->print(font, text_pos + text_offset, text, v4u8_white);
                 }
@@ -596,7 +593,6 @@ void draw_level(Renderer *renderer, Level *level, u32 render_mode, u32 microseco
     {
         char text[50];
         _snprintf_s(text, 50, _TRUNCATE, "Score %u", state->score);
-        //print(render_state, font, V2u(10, 10), text);
         renderer->print(font, V2u(10, 10), text);
     }
 }
@@ -609,11 +605,6 @@ static void draw_level_win_text (Renderer *renderer, Font *font) {
 
     v2u offset = V2u(50, 50);
     v2u rectangle_size = text_dim + (2*offset);
-    //draw_filled_rectangle(render_state, Pt - offset - V2u(1, 1), rectangle_size.x + 2, rectangle_size.y + 2, v4u8_green);
-    //draw_filled_rectangle(render_state, Pt - offset            , rectangle_size.x    , rectangle_size.y    , v4u8_black);
-        
-    //print(render_state, font, Pt, win_text, v4u8_green);
-
     renderer->draw_filled_rectangle(Pt - offset - V2u(1, 1), rectangle_size.x + 2, rectangle_size.y + 2, v4u8_green);
     renderer->draw_filled_rectangle(Pt - offset            , rectangle_size.x    , rectangle_size.y    , v4u8_black);
 
@@ -642,12 +633,6 @@ static void draw_level_lost_text(Renderer *renderer, Font *font) {
         
     v2u offset = V2u(25, 25);
     v2u rectangle_size = text_dim + (2*offset);
-    // draw_filled_rectangle(render_state, Ptr - offset - V2u(1, 1), rectangle_size.x + 2, rectangle_size.y + 2, v4u8_red);
-    // draw_filled_rectangle(render_state, Ptr - offset            , rectangle_size.x    , rectangle_size.y    , v4u8_black);        
-        
-    // print(render_state, font, Ptd, defeat_text, v4u8_red);
-    // print(render_state, font, Ptr, reset_text, v4u8_red);
-
     renderer->draw_filled_rectangle(Ptr - offset - V2u(1, 1), rectangle_size.x + 2, rectangle_size.y + 2, v4u8_red);
     renderer->draw_filled_rectangle(Ptr - offset            , rectangle_size.x    , rectangle_size.y    , v4u8_black);
     renderer->print(font, Ptd, defeat_text, v4u8_red);
@@ -779,18 +764,20 @@ b32 parse_level_header(Tokenizer *tokenizer, Level *level) {
     }
 }
 
-b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, u32 x, u32 y, Actor_Type actor_type) {
+b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, u32 x, u32 y, Actor_Type actor_type, b32 reverse_y = true) {
     assert(actor_type < Actor_Type_Count);    
 
     if (actor_type >= Actor_Type_Count) {
         printf("%s() got an invalid actor type (%u)\n", __FUNCTION__, actor_type);
         return false;
     }
+
+    u32 final_y = y;
+    if (reverse_y)  final_y = level->height - 1 - y;
     
-    u32 reversed_y = level->height - 1 - y;
     Actor *curr_actor = new_actor(&state->actors);
     assert(curr_actor);
-    curr_actor->position = V2u(x, reversed_y);
+    curr_actor->position = V2u(x, final_y);
     curr_actor->type = actor_type;
     curr_actor->state = Actor_State_Idle;
     curr_actor->direction = Direction_Right;
@@ -813,9 +800,11 @@ b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, u32 x, u32
             ++state->pacman_count;
         }
         else {
-            tokenizer->error = true;
-            _snprintf_s(tokenizer->error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found more than one pacman",
-                      tokenizer->path_and_name, tokenizer->line_number, tokenizer->line_position);
+            if (tokenizer) {
+                tokenizer->error = true;
+                _snprintf_s(tokenizer->error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found more than one pacman",
+                            tokenizer->path_and_name, tokenizer->line_number, tokenizer->line_position);
+            }
             return false;
         }
     }
@@ -823,7 +812,7 @@ b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, u32 x, u32
         
     //
     // Tile beneath the actor
-    u32 curr_tile_index = (level->width * reversed_y) + x;
+    u32 curr_tile_index = (level->width * final_y) + x;
     Tile *curr_tile = &state->tiles[curr_tile_index];
     curr_tile->type = Tile_Type_Floor;
     curr_tile->item.type = Item_Type_None;
@@ -1217,8 +1206,6 @@ static void draw_maps(Renderer *renderer, Level *level, s32 **maps, u32 map_inde
                     text_pos.y = text_pos.y - kOffset_y + (kCell_Size / 8);
                 }
                 
-                //print(render_state, font, text_pos, text, V4u8(100, 100, 100, 255));
-                //print(render_state, font, text_pos + text_offset, text, v4u8_white);
                 renderer->print(font, text_pos, text, V4u8(100, 100, 100, 255));
                 renderer->print(font, text_pos + text_offset, text, v4u8_white);
             }
@@ -1231,7 +1218,6 @@ static void draw_maps(Renderer *renderer, Level *level, s32 **maps, u32 map_inde
         assert(error > 0);        
         v2u text_dim = get_text_dim(font, map_name_text);
         u32 char_width = text_dim.x / static_cast<u32>(strlen(map_name_text));
-        //print(render_state, font, V2u(render_state->backbuffer_width - text_dim.x - char_width, 10), map_name_text);
         renderer->print(font, V2u(renderer->get_backbuffer_width() - text_dim.x - char_width, 10), map_name_text);
 #endif
     }

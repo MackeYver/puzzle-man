@@ -90,15 +90,16 @@ b32 tile_is_traversable(Tile *tile) {
     return result;    
 }
 
-
-void draw_tile(Renderer *renderer, Resources *resources, Tile *tile, v2u P) {
+void draw_tile(Renderer *renderer, Resources *resources, Tile *tile, v2u P) {    
     if (tile) {
         if (tile_has_wall(tile)) {
-            //draw_bitmap(render_state, P, &resources->bitmaps.walls[tile->type]);
-            renderer->draw_bitmap(P, &resources->bitmaps.walls[tile->type]);
+            u32 wall_id = static_cast<u32>(tile->type);
+            u32 cell_size = 64; // TODO: handle different cell size
+            u32 x = cell_size * (wall_id % 4);
+            u32 y = cell_size * static_cast<u32>(floorf(static_cast<f32>(wall_id) / 4.0f));
+            renderer->draw_bitmap(P, &resources->bitmaps.wall_atlas, x, y, x + 64, y + 64);
         }
         else if (tile->type == Tile_Type_None) {
-            //draw_bitmap(render_state, P, &resources->bitmaps.background);
             renderer->draw_bitmap(P, &resources->bitmaps.background);
         }
     }
@@ -107,11 +108,9 @@ void draw_tile(Renderer *renderer, Resources *resources, Tile *tile, v2u P) {
 void draw_item(Renderer *renderer, Resources *resources, Tile *tile, v2u P) {
     if (tile) {
         if (tile->item.type == Item_Type_Dot_Small) {
-            //draw_bitmap(render_state, P, &resources->bitmaps.dot_small);
             renderer->draw_bitmap(P, &resources->bitmaps.dot_small);
         }
         else if (tile->item.type == Item_Type_Dot_Large) {
-            //draw_bitmap(render_state, P, &resources->bitmaps.dot_large);
             renderer->draw_bitmap(P, &resources->bitmaps.dot_large);
         }
     }

@@ -52,7 +52,7 @@ typedef struct tWAVEFORMATEX {
 // };
 
 
-struct Audio_State {
+struct Audio {
     IXAudio2 *xaudio = nullptr;
     IXAudio2MasteringVoice *mastering_voice = nullptr;
     IXAudio2SubmixVoice *submix_voice = nullptr;
@@ -75,53 +75,53 @@ void static fini_source(Audio_Source *source) {
 }
 
 
-void static fini_audio(Audio_State *state) {
-    if (state) {
+void static fini_audio(Audio *audio) {
+    if (audio) {
         for (u32 index = 0; index < kAudio_Total_Voice_Count; ++index) {
-            if (state->sources[index].voice) {
-                fini_source(&state->sources[index]);
+            if (audio->sources[index].voice) {
+                fini_source(&audio->sources[index]);
             }
         }
         
-        if (state->mastering_voice) {
-            state->mastering_voice->DestroyVoice();
-            state->mastering_voice = nullptr;
+        if (audio->mastering_voice) {
+            audio->mastering_voice->DestroyVoice();
+            audio->mastering_voice = nullptr;
         }
 
-        if (state->xaudio) {
-            state->xaudio->Release();
-            state->xaudio = nullptr;
+        if (audio->xaudio) {
+            audio->xaudio->Release();
+            audio->xaudio = nullptr;
         }
     }
 }
 
 
-b32 static critical_error(Audio_State *state, HRESULT hresult, char const *error_message) {
+b32 static critical_error(Audio *audio, HRESULT hresult, char const *error_message) {
     b32 result = false;
     
     if (FAILED(hresult)) {
-        LOG_ERROR(state->log, error_message, hresult);        
+        LOG_ERROR(audio->log, error_message, hresult);        
         result = false;
-        fini_audio(state);
+        fini_audio(audio);
     }
 
     return result;
 }
 
 
-b32 static init_audio(Audio_State *state, Log *log) {
-    state->log = log;
-    HRESULT hresult = XAudio2Create(&state->xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR);
-    if (critical_error(state, hresult, "failed to create the xaudio object"))  return false;
+b32 static init_audio(Audio *audio, Log *log) {
+    audio->log = log;
+    HRESULT hresult = XAudio2Create(&audio->xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    if (critical_error(audio, hresult, "failed to create the xaudio object"))  return false;
 
-    hresult = state->xaudio->CreateMasteringVoice(&state->mastering_voice);
-    if (critical_error(state, hresult, "failed to create the mastering voice"))  return false;
+    hresult = audio->xaudio->CreateMasteringVoice(&audio->mastering_voice);
+    if (critical_error(audio, hresult, "failed to create the mastering voice"))  return false;
 
-    state->submix_voice = nullptr;
+    audio->submix_voice = nullptr;
 
     for (u32 index = 0; index < kAudio_Total_Voice_Count; ++index) {
-        state->sources[index].voice = nullptr;
-        //state->sources[index].is_playing = false;
+        audio->sources[index].voice = nullptr;
+        //audio->sources[index].is_playing = false;
     }
         
     return true;
@@ -147,44 +147,44 @@ void static set_format_from_wav(Audio_Source *source, Wav *wav) {
 }
 
 
-b32 static init_voice(Audio_State *state, Audio_Source *source, Wav *wav) {
+b32 static init_voice(Audio *audio, Audio_Source *source, Wav *wav) {
     set_format_from_wav(source, wav);
     XAUDIO2_SEND_DESCRIPTOR send_desc;
     send_desc.Flags = 0;
-    send_desc.pOutputVoice = state->submix_voice;
+    send_desc.pOutputVoice = audio->submix_voice;
     XAUDIO2_VOICE_SENDS voice_sends;
     voice_sends.SendCount = 1;
     voice_sends.pSends = &send_desc;
 
-    HRESULT hresult = state->xaudio->CreateSourceVoice(&source->voice, &source->format, 0, XAUDIO2_DEFAULT_FREQ_RATIO,
-                                                       0, &voice_sends, 0);//&state->callback, &voice_sends, 0);
-    if (critical_error(state, hresult, "failed to create voice"))  return false;
+    HRESULT hresult = audio->xaudio->CreateSourceVoice(&source->voice, &source->format, 0, XAUDIO2_DEFAULT_FREQ_RATIO,
+                                                       0, &voice_sends, 0);//&audio->callback, &voice_sends, 0);
+    if (critical_error(audio, hresult, "failed to create voice"))  return false;
 
     return true;
 }
 
 
-b32 static init_voices(Audio_State *state, Wav *wav) {
+b32 static init_voices(Audio *audio, Wav *wav) {
     b32 result = false;
 
-    if (state && wav) {
+    if (audio && wav) {
         //
         // Create submix voice
         XAUDIO2_SEND_DESCRIPTOR send_desc;
         send_desc.Flags = 0;
-        send_desc.pOutputVoice = state->mastering_voice;
+        send_desc.pOutputVoice = audio->mastering_voice;
         XAUDIO2_VOICE_SENDS voice_sends;
         voice_sends.SendCount = 1;
         voice_sends.pSends = &send_desc;
         
-        HRESULT hresult = state->xaudio->CreateSubmixVoice(&state->submix_voice, wav->format.number_of_channels, wav->format.sample_rate,
+        HRESULT hresult = audio->xaudio->CreateSubmixVoice(&audio->submix_voice, wav->format.number_of_channels, wav->format.sample_rate,
                                                            0, 0, &voice_sends, 0);
-        if (critical_error(state, hresult, "failed to create the submix voice"))  return false;
+        if (critical_error(audio, hresult, "failed to create the submix voice"))  return false;
 
         //
         // Create source voices
         for (u32 index = 0; index < kAudio_Total_Voice_Count; ++index) {
-            result = init_voice(state, &state->sources[index], wav);
+            result = init_voice(audio, &audio->sources[index], wav);
             if (!result)  break;
         }
     }
@@ -193,17 +193,17 @@ b32 static init_voices(Audio_State *state, Wav *wav) {
 }
 
 
-b32 static play_wav(Audio_State *state, Wav *wav) {
+b32 static play_wav(Audio *audio, Wav *wav) {
     b32 result = false;
     
-    if (state && wav) {
+    if (audio && wav) {
         for (u32 index = 0; index < kAudio_Total_Voice_Count; ++index) {
-            Audio_Source *source = &state->sources[index];
+            Audio_Source *source = &audio->sources[index];
             if (!source)             continue;
 
-            XAUDIO2_VOICE_STATE voice_state;
-            source->voice->GetState(&voice_state);
-            if (voice_state.pCurrentBufferContext || voice_state.BuffersQueued > 0)  continue;
+            XAUDIO2_VOICE_STATE voice_audio;
+            source->voice->GetState(&voice_audio);
+            if (voice_audio.pCurrentBufferContext || voice_audio.BuffersQueued > 0)  continue;
 
             
             //
@@ -215,7 +215,7 @@ b32 static play_wav(Audio_State *state, Wav *wav) {
                 (source->format.wBitsPerSample != wav->format.bits_per_sample))
             {
                 fini_source(source);
-                result = init_voice(state, source, wav);
+                result = init_voice(audio, source, wav);
                 assert(result);
             }
             
@@ -235,7 +235,7 @@ b32 static play_wav(Audio_State *state, Wav *wav) {
             if (FAILED(hresult)) {                
                 char buffer[512];
                 _snprintf_s(buffer, 512, _TRUNCATE, "failed to submit source buffer, error: %d", hresult);
-                critical_error(state, hresult, buffer);
+                critical_error(audio, hresult, buffer);
             }
 
             source->voice->Start();
