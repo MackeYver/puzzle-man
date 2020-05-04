@@ -23,7 +23,7 @@ struct Mouse_Button {
     Mouse_Button_State curr;
 };
 
-struct Mouse_Input {
+struct Input_Mouse {
     b32 is_inside = false;
     v2 position;
 
@@ -35,6 +35,59 @@ struct Mouse_Input {
         Mouse_Button buttons[2];
     };
 };
+
+
+//
+// Keyboard
+
+#define kInput_Keyboard_Buffer_Length kLevel_Name_Max_Length
+
+enum Input_Keyboard_State {
+    Input_Keyboard_State_Inactive = 0,
+    Input_Keyboard_State_Receive,
+    Input_Keyboard_State_Done,
+    Input_Keyboard_State_Cancel,
+
+    Input_Keyboard_State_Count,
+};
+
+enum Input_Keyboard_Mode {
+    Input_Keyboard_Mode_Alphanumeric,
+    Input_Keyboard_Mode_Integer,
+    Input_Keyboard_Mode_Float,
+    
+    Input_Keyboard_Mode_Count,
+};
+
+struct Input_Keyboard {
+    char buffer[kInput_Keyboard_Buffer_Length];
+    u32 cursor_position = 0; // Location of cursor position, will always be in the range [0, ..., end_position - 1] 
+    u32 end_position = 0;    // One past the last char in the buffer (position of the null terminator). Will always be at least cursor_position + 1.
+    b32 decimal_entered = false;
+    Input_Keyboard_State state = Input_Keyboard_State_Inactive;
+    Input_Keyboard_Mode mode = Input_Keyboard_Mode_Alphanumeric;
+};
+
+static void cancel_keyboard_input(Input_Keyboard *keyboard);
+static void clear_keyboard_input(Input_Keyboard *keyboard);
+static void scan_for_decimal(Input_Keyboard *keyboard);
+
+static void begin_keyboard_input(Input_Keyboard *keyboard, Input_Keyboard_Mode mode);
+static void begin_keyboard_input(Input_Keyboard *keyboard, f32 value);
+
+static void add_char_at_cursor(Input_Keyboard *keyboard, char const c);
+static void del_at_cursor(Input_Keyboard *keyboard);
+static void backspace_at_cursor(Input_Keyboard *keyboard);
+static void move_cursor_left(Input_Keyboard *keyboard, u32 n = 1);
+static void move_cursor_right(Input_Keyboard *keyboard, u32 n = 1);
+static void move_cursor_to_start(Input_Keyboard *keyboard);
+static void move_cursor_to_end(Input_Keyboard *keyboard);
+
+struct Editor_Input {
+    Input_Keyboard keyboard;
+    Input_Mouse mouse;
+};
+
 
 
 // 
@@ -64,7 +117,7 @@ enum Level_Editor_State {
 
 struct Level_Editor {
     Level level;
-    Mouse_Input mouse;
+    Editor_Input input;
     Tile *hot_tile = nullptr;
     Selected_Object selected_objects[2];
     u32 render_mode;
@@ -75,7 +128,181 @@ struct Level_Editor {
 
 
 //
-// Implementations
+// #_Keyboard input
+//
+
+static void cancel_keyboard_input(Input_Keyboard *keyboard) {
+    keyboard->state = Input_Keyboard_State_Cancel;
+    clear_keyboard_input(keyboard);
+}
+
+
+static void clear_keyboard_input(Input_Keyboard *keyboard) {
+    keyboard->end_position = 0;
+    keyboard->buffer[0] = '\0';
+    keyboard->cursor_position = 0;
+}
+
+
+static void begin_keyboard_input(Input_Keyboard *keyboard, Input_Keyboard_Mode mode) {
+    clear_keyboard_input(keyboard);
+    keyboard->state = Input_Keyboard_State_Receive;
+    keyboard->mode = mode;
+}
+
+static void begin_keyboard_input(Input_Keyboard *keyboard, f32 value) {
+    begin_keyboard_input(keyboard, Input_Keyboard_Mode_Float);
+    
+    u32 char_num = _snprintf_s(keyboard->buffer, kInput_Keyboard_Buffer_Length, _TRUNCATE, "%g", value);
+    keyboard->cursor_position = char_num;
+    keyboard->end_position = char_num;
+
+    scan_for_decimal(keyboard);
+}
+
+
+static void begin_keyboard_input(Input_Keyboard *keyboard, char const *text) {
+    begin_keyboard_input(keyboard, Input_Keyboard_Mode_Alphanumeric);
+    
+    u32 char_num = _snprintf_s(keyboard->buffer, kInput_Keyboard_Buffer_Length, _TRUNCATE, "%s", text);
+    keyboard->cursor_position = char_num;
+    keyboard->end_position = char_num;
+
+    scan_for_decimal(keyboard);
+}
+
+
+static void scan_for_decimal(Input_Keyboard *keyboard) {
+    keyboard->decimal_entered = false;
+
+    // NOTE: we're only checking for one decimal, what if there are more?
+    for (char *ptr = keyboard->buffer; *ptr; ++ptr) {
+        if (*ptr == '.') {
+            keyboard->decimal_entered = true;
+            break;            
+        }
+    }
+}
+
+
+static void add_char_at_cursor(Input_Keyboard *keyboard, char const c) {
+    if (keyboard->end_position != kInput_Keyboard_Buffer_Length) {
+        u32 c_as_int = static_cast<u32>(c);
+        
+        if ((c == '.' || c == ',') && keyboard->mode != Input_Keyboard_Mode_Integer) {
+            if (keyboard->mode == Input_Keyboard_Mode_Float && keyboard->decimal_entered) {
+            }
+            else {
+                keyboard->buffer[keyboard->end_position++] = '.';
+                ++keyboard->cursor_position;
+                keyboard->decimal_entered = true;
+            }
+        }
+        else if((c_as_int >= 0x30 && c_as_int <= 0x39) || (c_as_int >= 0x41 && c_as_int <= 0x5a) || (c_as_int >= 0x61 && c_as_int <= 0x7a) || (c_as_int == 32)) {
+            ++keyboard->end_position;
+            if (keyboard->end_position > 1) {
+                for (u32 index = keyboard->end_position; index > keyboard->cursor_position; --index) {
+                    keyboard->buffer[index] = keyboard->buffer[index - 1];
+                }
+            }
+            
+            keyboard->buffer[keyboard->cursor_position] = c;
+            keyboard->buffer[keyboard->end_position] = '\0';
+
+            if ((keyboard->cursor_position + 1) == keyboard->end_position)  ++keyboard->cursor_position;
+
+            //keyboard->buffer[keyboard->end_position++] = c;
+            //++keyboard->cursor_position;
+        }
+    }
+}
+
+
+static void del_at_cursor(Input_Keyboard *keyboard) {
+    u32 end_position = keyboard->end_position > 1 ? keyboard->end_position - 1 : 0;
+    
+    for (u32 index = keyboard->cursor_position; index < end_position; ++index) {
+        keyboard->buffer[index] = keyboard->buffer[index + 1];
+    }    
+    
+    if (keyboard->end_position > 0) {
+        --keyboard->end_position;
+    }
+    if ((keyboard->cursor_position > 0) && (keyboard->cursor_position >= keyboard->end_position)) {
+        --keyboard->cursor_position;
+    }
+
+    keyboard->buffer[keyboard->end_position] = '\0';
+
+    if (keyboard->mode == Input_Keyboard_Mode_Float)  scan_for_decimal(keyboard);
+}
+
+
+static void backspace_at_cursor(Input_Keyboard *keyboard) {    
+    if (keyboard->cursor_position > 0) {
+        u32 end_position = keyboard->end_position > 1 ? keyboard->end_position - 1 : 0;
+        
+        for (u32 index = keyboard->cursor_position - 1; index < end_position; ++index) {
+            keyboard->buffer[index] = keyboard->buffer[index + 1];
+        }
+        
+        --keyboard->cursor_position;
+        keyboard->buffer[--keyboard->end_position] = '\0';
+
+        if (keyboard->mode == Input_Keyboard_Mode_Float)  scan_for_decimal(keyboard);
+    }
+}
+
+static void move_cursor_left(Input_Keyboard *keyboard, u32 n) {
+    if (n >= keyboard->cursor_position) {
+        keyboard->cursor_position = 0;
+    }
+    else {        
+        keyboard->cursor_position -= n;
+    }
+}
+
+static void move_cursor_right(Input_Keyboard *keyboard, u32 n) {
+    u32 new_position = keyboard->cursor_position + n;
+    u32 last_position = keyboard->end_position > 1 ? keyboard->end_position : 0;
+        
+    if (new_position <= last_position) {
+        keyboard->cursor_position = new_position;
+    }
+    else {
+        keyboard->cursor_position = last_position;
+    }
+}
+
+static void move_cursor_to_start(Input_Keyboard *keyboard) {
+    move_cursor_left(keyboard, keyboard->end_position);
+}
+    
+static void move_cursor_to_end(Input_Keyboard *keyboard) {
+    move_cursor_right(keyboard, keyboard->end_position);
+}
+
+static u32 get_cursor_position_in_pixels(Input_Keyboard *keyboard, Font *font, Char_Data *char_data_output) {
+    u32 result = 0;
+    
+    for (u32 index = 0; index < keyboard->cursor_position; ++index) {
+        u32 curr_char_index = keyboard->buffer[index] - 32;
+        Char_Data *curr_char_data = &font->char_data[curr_char_index];
+        result += curr_char_data->advance_x;
+
+        if ((index == (keyboard->cursor_position - 1) && char_data_output)) {
+            *char_data_output = *curr_char_data;
+        }
+    }
+
+    return result;
+}
+
+
+
+
+//
+// Init and fini
 //
 
 static void fini_editor(Level_Editor *editor) {
@@ -104,7 +331,7 @@ static void end_editing(Level_Editor *editor, Level *level) {
 
 
 //
-// Utility functions for editing
+// Editing
 //
 
 static void clear_tile(Level_State *state, Tile *tile) {
@@ -132,13 +359,6 @@ static void clear_tile(Level_State *state, Tile *tile) {
 static void validate_level(Level_State *state) {
     
 }
-
-
-
-
-//
-// Editing
-//
 
 
 char get_char_from_actor_type(Actor *actor) {
@@ -272,7 +492,7 @@ static b32 save_level(Level *level) {
 static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u32 microseconds_since_start) {
     Level *level = &editor->level;
     Font *font = &level->resources->font;
-    Mouse_Input *mouse = &editor->mouse;
+    Input_Mouse *mouse = &editor->input.mouse;
 
     
     //
@@ -316,7 +536,7 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
             }
 
             if (editor->hot_tile) {
-                if (editor->mouse.left_button.curr == Mouse_Button_Pressed) {
+                if (mouse->left_button.curr == Mouse_Button_Pressed) {
                     if (editor->selected_objects[0].type == Object_Type_Tile) {
                         clear_tile(editor->level.current_state, editor->hot_tile);
                         editor->hot_tile->type = static_cast<Tile_Type>(editor->selected_objects[0].value);
@@ -337,7 +557,7 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                     }
                     changed_in_this_frame = true;
                 }
-                else if (editor->mouse.right_button.curr == Mouse_Button_Pressed) {
+                else if (mouse->right_button.curr == Mouse_Button_Pressed) {
                     if (editor->selected_objects[1].type == Object_Type_Tile) {
                         clear_tile(editor->level.current_state, editor->hot_tile);
                         editor->hot_tile->type = static_cast<Tile_Type>(editor->selected_objects[1].value);
@@ -392,12 +612,62 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
         v2u Pc = V2u(1, level->height - 1);
         v4u8 colour = v4u8_white;
 
+        
         //
-        // Draw tiles
+        // Print name
+        {
+            char buffer[512];
+            u32 static debug_counter = 0;
+            v4u8 text_colour = colour;
+
+            if ((mouse->left_button.curr == Mouse_Button_Pressed) && mouse_is_inside) {
+                if ((Pmc.y >= Pc.y) && (editor->input.keyboard.state != Input_Keyboard_State_Receive)) {
+                    begin_keyboard_input(&editor->input.keyboard, level->name);
+                }
+                else if (editor->input.keyboard.state == Input_Keyboard_State_Receive) {
+                    cancel_keyboard_input(&editor->input.keyboard);
+                }
+            }
+
+            if (editor->input.keyboard.state == Input_Keyboard_State_Receive) {
+                _snprintf_s(buffer, kLevel_Name_Max_Length, _TRUNCATE, "%s", editor->input.keyboard.buffer);
+                text_colour = v4u8_yellow;
+            }
+            else if (editor->input.keyboard.state == Input_Keyboard_State_Done) {
+                _snprintf_s(editor->level.name, kLevel_Name_Max_Length, _TRUNCATE, "%s", editor->input.keyboard.buffer);
+                cancel_keyboard_input(&editor->input.keyboard);
+            }   
+            else {
+                _snprintf_s(buffer, 512, _TRUNCATE, "%s", editor->level.name);
+            }
+
+            char const *caption = "Name: ";
+            v2u caption_dim = get_text_dim(font, caption);
+            v2u name_dim = get_text_dim(font, buffer);
+
+            v2u Pt = Pc * cell_size;
+
+            if (editor->input.keyboard.state == Input_Keyboard_State_Receive) {
+                u32 cursor_x = get_cursor_position_in_pixels(&editor->input.keyboard, font, nullptr);
+                renderer->draw_filled_rectangle(Pt + V2u(caption_dim.x + cursor_x, 0) - V2u(0, 5), 12, 24, v4u8_red);
+            }
+            
+            renderer->print(font, Pt, "Name: ", colour);
+            renderer->print(font, Pt + V2u(caption_dim.x, 0), buffer, text_colour);            
+            
+            Pc.y -= 2;
+            
+            ++debug_counter;
+        }
+        
+
+        //
+        // Draw the "tiles-palette"
         {
             char const *text = "Tiles";
             v2u text_dim = get_text_dim(font, text);
             u32 y = (Pc.y * cell_size) + ((cell_size - text_dim.y) / 2);
+            renderer->print(font, V2u(Pc.x * cell_size, y) + V2u(1, 1), text, V4u8(125, 125, 125, 255));
             renderer->print(font, V2u(Pc.x * cell_size, y), text);
             --Pc.y;
         
@@ -440,6 +710,7 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
             v2u text_dim = get_text_dim(font, text);
             Pc = V2u(1, Pc.y - 1);
             u32 y = (Pc.y * cell_size) + ((cell_size - text_dim.y) / 2);
+            renderer->print(font, V2u(Pc.x * cell_size, y) + V2u(1, 1), text, V4u8(125, 125, 125, 255));
             renderer->print(font, V2u(Pc.x * cell_size, y), text);
             --Pc.y;
 
@@ -483,6 +754,7 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
             v2u text_dim = get_text_dim(font, text);
             Pc = V2u(1, Pc.y - 1);
             u32 y = (Pc.y * cell_size) + ((cell_size - text_dim.y) / 2);
+            renderer->print(font, V2u(Pc.x * cell_size, y) + V2u(1, 1), text, V4u8(125, 125, 125, 255));
             renderer->print(font, V2u(Pc.x * cell_size, y), text);
             --Pc.y;
 
@@ -556,6 +828,7 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                     renderer->draw_rectangle_outline(P, cell_size, cell_size, colour);
                 }
 
+                renderer->print(font, P + offset + V2u(1, 1), text[index], V4u8(125, 125, 125, 255));
                 renderer->print(font, P + offset, text[index], colour);
             }
         }

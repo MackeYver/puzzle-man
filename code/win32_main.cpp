@@ -213,161 +213,205 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
             Game *game = reinterpret_cast<Game *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
             b32 ctrl_is_down = GetKeyState(VK_CONTROL) & 0x8000;
             b32 shift_is_down = GetKeyState(VK_SHIFT) & 0x8000;
-            
-            if (w_param == VK_RIGHT) {
-                game->input = Input_Right;                
-            }
-            else if (w_param == VK_UP) {
-                game->input = Input_Up;
-            }
-            else if (w_param == VK_LEFT) {
-                game->input = Input_Left;
-            }
-            else if (w_param == VK_DOWN) {
-                game->input = Input_Down;
-            }
-            else if (w_param == VK_RETURN) {
-                game->input = Input_Select;
-            }
-            else if (w_param == VK_ESCAPE) {
-                game->input = Input_Escape;
-            }
-            else if (w_param == VK_DELETE) {
-                game->input = Input_Delete;
-            }
-            else if (w_param == VK_SPACE) {
-                game->input = Input_Space;
-            }
-            else if (w_param == VK_TAB) {
-                if (game->state == Game_State_Editing || game->state == Game_State_Begin_Editing) {
-                    game->state = Game_State_End_Editing;
+            b32 lower_case = !(ctrl_is_down || shift_is_down);
+            Input_Keyboard *keyboard = &game->editor.input.keyboard;
+
+            if (keyboard->state == Input_Keyboard_State_Receive) {
+                if (w_param == VK_ESCAPE) {
+                    keyboard->state = Input_Keyboard_State_Cancel;
+                }
+                else if (w_param == VK_LEFT) {
+                    move_cursor_left(keyboard);
+                }
+                else if (w_param == VK_RIGHT) {
+                    move_cursor_right(keyboard);
+                }
+                else if (w_param == VK_HOME) {
+                    move_cursor_to_start(keyboard);
+                }
+                else if (w_param == VK_END) {
+                    move_cursor_to_end(keyboard);
+                }
+                else if (w_param == VK_BACK) {
+                    backspace_at_cursor(keyboard);
+                }
+                else if (w_param == VK_DELETE) {
+                    del_at_cursor(keyboard);
+                }
+                else if (w_param == VK_RETURN) {
+                    keyboard->state = Input_Keyboard_State_Done;
                 }
                 else {
-                    game->state = Game_State_Begin_Editing;
+                    char char_to_add = '\0';
+                    if (w_param == VK_DECIMAL || w_param == VK_OEM_PERIOD)  char_to_add = '.';
+                    else if (w_param == VK_SPACE)                           char_to_add = ' ';
+                    else if (w_param >= 0x30 && w_param <= 0x39) { // Digits
+                        char_to_add = static_cast<char>(w_param);
+                    }
+                    else if (w_param >= 0x41 && w_param <= 0x5a) { // Letters
+                        char c = static_cast<char>(w_param);
+                        c = lower_case ? c + 32 : c;
+                        char_to_add = c; 
+                    }
+                    add_char_at_cursor(keyboard, char_to_add);
                 }
             }
-            else if (w_param == 0x31) { // 1
-                u32 *render_mode = nullptr;
-                if (game->state == Game_State_Editing) {
-                    render_mode = &game->editor.render_mode;
+            else {            
+                if (w_param == VK_RIGHT) {
+                    game->input = Input_Right;                
                 }
-                else {
-                    render_mode = &game->render_mode;
+                else if (w_param == VK_UP) {
+                    game->input = Input_Up;
                 }
-                *render_mode ^= Level_Render_Mode_Tiles;
-            }
-            else if (w_param == 0x32) { // 2
-                u32 *render_mode = nullptr;
-                if (game->state == Game_State_Editing) {
-                    render_mode = &game->editor.render_mode;
+                else if (w_param == VK_LEFT) {
+                    game->input = Input_Left;
                 }
-                else {
-                    render_mode = &game->render_mode;
+                else if (w_param == VK_DOWN) {
+                    game->input = Input_Down;
                 }
-                *render_mode ^= Level_Render_Mode_Items;
-            }
-            else if (w_param == 0x33) { // 3
-                u32 *render_mode = nullptr;
-                if (game->state == Game_State_Editing) {
-                    render_mode = &game->editor.render_mode;
+                else if (w_param == VK_RETURN) {
+                    game->input = Input_Select;
                 }
-                else {
-                    render_mode = &game->render_mode;
+                else if (w_param == VK_ESCAPE) {
+                    game->input = Input_Escape;
                 }
-                *render_mode ^= Level_Render_Mode_Actors;
-            }
-            else if (w_param == 0x34) { // 4
-                u32 *render_mode = nullptr;
-                if (game->state == Game_State_Editing) {
-                    render_mode = &game->editor.render_mode;
+                else if (w_param == VK_DELETE) {
+                    game->input = Input_Delete;
                 }
-                else {
-                    render_mode = &game->render_mode;
+                else if (w_param == VK_SPACE) {
+                    game->input = Input_Space;
                 }
-                *render_mode |= Level_Render_Mode_All;
-            }            
-            else if (w_param == 0x49) { // I
-                u32 *render_mode = nullptr;
-                if (game->state == Game_State_Editing) {
-                    render_mode = &game->editor.render_mode;
+                else if (w_param == VK_TAB) {
+                    if (game->state == Game_State_Editing || game->state == Game_State_Begin_Editing) {
+                        game->state = Game_State_End_Editing;
+                    }
+                    else {
+                        game->state = Game_State_Begin_Editing;
+                    }
                 }
-                else {
-                    render_mode = &game->render_mode;
+                else if (w_param == 0x31) { // 1
+                    u32 *render_mode = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        render_mode = &game->editor.render_mode;
+                    }
+                    else {
+                        render_mode = &game->render_mode;
+                    }
+                    *render_mode ^= Level_Render_Mode_Tiles;
                 }
-                *render_mode ^= Level_Render_Mode_Actor_IDs;
-            }
-            else if (w_param == 0x47) { // G
-                u32 *render_mode = nullptr;
-                if (game->state == Game_State_Editing) {
-                    render_mode = &game->editor.render_mode;
+                else if (w_param == 0x32) { // 2
+                    u32 *render_mode = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        render_mode = &game->editor.render_mode;
+                    }
+                    else {
+                        render_mode = &game->render_mode;
+                    }
+                    *render_mode ^= Level_Render_Mode_Items;
                 }
-                else {
-                    render_mode = &game->render_mode;
+                else if (w_param == 0x33) { // 3
+                    u32 *render_mode = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        render_mode = &game->editor.render_mode;
+                    }
+                    else {
+                        render_mode = &game->render_mode;
+                    }
+                    *render_mode ^= Level_Render_Mode_Actors;
                 }
-                *render_mode ^= Level_Render_Mode_Grid;
-            }
-            else if (w_param == 0x52) { // R
-                reset(game);
-            }
-            else if (w_param == VK_BACK || (!shift_is_down && ctrl_is_down && w_param == 0x5A)) {
-                // 0x5A == 'z
-                if (game->state != Game_State_Editing) {
-                    undo(game);
+                else if (w_param == 0x34) { // 4
+                    u32 *render_mode = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        render_mode = &game->editor.render_mode;
+                    }
+                    else {
+                        render_mode = &game->render_mode;
+                    }
+                    *render_mode |= Level_Render_Mode_All;
+                }            
+                else if (w_param == 0x49) { // I
+                    u32 *render_mode = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        render_mode = &game->editor.render_mode;
+                    }
+                    else {
+                        render_mode = &game->render_mode;
+                    }
+                    *render_mode ^= Level_Render_Mode_Actor_IDs;
                 }
-            }
-            else if ((shift_is_down && ctrl_is_down && w_param == 0x5A) || ctrl_is_down && w_param == 0x59) {
-                // 0x59 == 'y'
-                if (game->state != Game_State_Editing) {
-                    redo(game);
+                else if (w_param == 0x47) { // G
+                    u32 *render_mode = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        render_mode = &game->editor.render_mode;
+                    }
+                    else {
+                        render_mode = &game->render_mode;
+                    }
+                    *render_mode ^= Level_Render_Mode_Grid;
                 }
-            }
-            else if (w_param == VK_F5) {
-                // Save
-                //write_player_profiles_to_disc(game->player_profiles);
-            }
-            else if (w_param == VK_F6) {
-                // Load
-                //read_player_profiles_from_disc(game->player_profiles);
-            }                
-            else if (game->state == Game_State_Lost && w_param == VK_RETURN) {
-                if (game->state != Game_State_Editing) {
+                else if (w_param == 0x52) { // R
                     reset(game);
                 }
-            }
-            else if (game->state == Game_State_Won && w_param == VK_RETURN) {
-                if (game->state != Game_State_Editing) {
-                    change_to_next_level(game);
+                else if (w_param == VK_BACK || (!shift_is_down && ctrl_is_down && w_param == 0x5A)) {
+                    // 0x5A == 'z
+                    if (game->state != Game_State_Editing) {
+                        undo(game);
+                    }
                 }
-            }            
-            else if (w_param == VK_F1) { // DEBUG                
-                if (game->state != Game_State_Editing) {
-                    change_to_prev_level(game);
+                else if ((shift_is_down && ctrl_is_down && w_param == 0x5A) || ctrl_is_down && w_param == 0x59) {
+                    // 0x59 == 'y'
+                    if (game->state != Game_State_Editing) {
+                        redo(game);
+                    }
                 }
-            }
-            else if (w_param == VK_F2) { // DEBUG
-                if (game->state != Game_State_Editing) {
-                    change_to_next_level(game);
+                else if (w_param == VK_F5) {
+                    // Save
+                    //write_player_profiles_to_disc(game->player_profiles);
                 }
-            }
-            else if (w_param == VK_F3) { // DEBUG
-                Level *level = nullptr;
-                if (game->state == Game_State_Editing) {
-                    level = &game->editor.level;
+                else if (w_param == VK_F6) {
+                    // Load
+                    //read_player_profiles_from_disc(game->player_profiles);
+                }                
+                else if (game->state == Game_State_Lost && w_param == VK_RETURN) {
+                    if (game->state != Game_State_Editing) {
+                        reset(game);
+                    }
                 }
-                else {
-                    level = &game->current_level;
+                else if (game->state == Game_State_Won && w_param == VK_RETURN) {
+                    if (game->state != Game_State_Editing) {
+                        change_to_next_level(game);
+                    }
+                }            
+                else if (w_param == VK_F1) { // DEBUG                
+                    if (game->state != Game_State_Editing) {
+                        change_to_prev_level(game);
+                    }
                 }
-                level->current_map_index = level->current_map_index == 0 ? Map_Count : level->current_map_index - 1;
-            }
-            else if (w_param == VK_F4) { // DEBUG
-                Level *level = nullptr;
-                if (game->state == Game_State_Editing) {
-                    level = &game->editor.level;
+                else if (w_param == VK_F2) { // DEBUG
+                    if (game->state != Game_State_Editing) {
+                        change_to_next_level(game);
+                    }
                 }
-                else {
-                    level = &game->current_level;
+                else if (w_param == VK_F3) { // DEBUG
+                    Level *level = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        level = &game->editor.level;
+                    }
+                    else {
+                        level = &game->current_level;
+                    }
+                    level->current_map_index = level->current_map_index == 0 ? Map_Count : level->current_map_index - 1;
                 }
-                level->current_map_index = (level->current_map_index + 1) > Map_Count ? 0 : (level->current_map_index + 1);
+                else if (w_param == VK_F4) { // DEBUG
+                    Level *level = nullptr;
+                    if (game->state == Game_State_Editing) {
+                        level = &game->editor.level;
+                    }
+                    else {
+                        level = &game->current_level;
+                    }
+                    level->current_map_index = (level->current_map_index + 1) > Map_Count ? 0 : (level->current_map_index + 1);
+                }
             }
         } break;
     }
@@ -537,10 +581,11 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         //
         // Update and render
         if (game.state == Game_State_Begin_Editing) {
-            game.editor.mouse.left_button.curr  = Mouse_Button_Up;
-            game.editor.mouse.left_button.prev  = Mouse_Button_Up;
-            game.editor.mouse.right_button.curr = Mouse_Button_Up;
-            game.editor.mouse.right_button.prev = Mouse_Button_Up;
+            Input_Mouse *mouse = &game.editor.input.mouse;
+            mouse->left_button.curr  = Mouse_Button_Up;
+            mouse->left_button.prev  = Mouse_Button_Up;
+            mouse->right_button.curr = Mouse_Button_Up;
+            mouse->right_button.prev = Mouse_Button_Up;
         }
         
         if (game.state == Game_State_Editing || game.state == Game_State_Begin_Editing) {            
@@ -550,7 +595,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             GetClientRect(hwnd, &client_rect);
 
             Level_Editor *editor = &game.editor;
-            Mouse_Input *mouse = &editor->mouse;
+            Input_Mouse *mouse = &editor->input.mouse;
             
             if (PtInRect(&client_rect, Pm)) {
                 mouse->position = V2(static_cast<f32>(Pm.x), static_cast<f32>(client_rect.bottom - Pm.y));
