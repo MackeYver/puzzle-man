@@ -499,7 +499,6 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             }
 
             GetClientRect(hwnd, &client_rect);
-            printf("%d x %d\n", client_rect.bottom, client_rect.top);
 
             ShowWindow(hwnd, CmdShow);
             UpdateWindow(hwnd);
@@ -582,10 +581,12 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         // Update and render
         if (game.state == Game_State_Begin_Editing) {
             Input_Mouse *mouse = &game.editor.input.mouse;
-            mouse->left_button.curr  = Mouse_Button_Up;
-            mouse->left_button.prev  = Mouse_Button_Up;
-            mouse->right_button.curr = Mouse_Button_Up;
-            mouse->right_button.prev = Mouse_Button_Up;
+            mouse->left_button.curr    = Input_Mouse_Button_Up;
+            mouse->left_button.prev    = Input_Mouse_Button_Up;
+            mouse->middle_button.curr  = Input_Mouse_Button_Up;
+            mouse->middle_button.prev  = Input_Mouse_Button_Up;
+            mouse->right_button.curr   = Input_Mouse_Button_Up;
+            mouse->right_button.prev   = Input_Mouse_Button_Up;
         }
         
         if (game.state == Game_State_Editing || game.state == Game_State_Begin_Editing) {            
@@ -601,23 +602,23 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
                 mouse->position = V2(static_cast<f32>(Pm.x), static_cast<f32>(client_rect.bottom - Pm.y));
                 mouse->is_inside = true;
 
-                u32 constexpr key_codes[] = {VK_LBUTTON, VK_RBUTTON};
-                for (u32 index = 0; index < 2; ++index) {
+                u32 constexpr key_codes[] = {VK_LBUTTON, VK_MBUTTON, VK_RBUTTON};
+                for (u32 index = 0; index < 3; ++index) {
                     mouse->buttons[index].prev = mouse->buttons[index].curr;
                     u16 button_state = GetKeyState(key_codes[index]);
 
                     b32 button_is_down = button_state & 0x8000;
-                    if (button_is_down && (mouse->buttons[index].prev == Mouse_Button_Up)) {
-                        mouse->buttons[index].curr = Mouse_Button_Pressed;
+                    if (button_is_down && (mouse->buttons[index].prev == Input_Mouse_Button_Up)) {
+                        mouse->buttons[index].curr = Input_Mouse_Button_Pressed;
                     }
-                    else if (button_is_down && (mouse->buttons[index].prev == Mouse_Button_Pressed)) {
-                        mouse->buttons[index].curr = Mouse_Button_Down;
+                    else if (button_is_down && (mouse->buttons[index].prev == Input_Mouse_Button_Pressed)) {
+                        mouse->buttons[index].curr = Input_Mouse_Button_Down;
                     }
-                    else if (!button_is_down && (mouse->buttons[index].prev == Mouse_Button_Down)) {
-                        mouse->buttons[index].curr = Mouse_Button_Released;
+                    else if (!button_is_down && (mouse->buttons[index].prev == Input_Mouse_Button_Down)) {
+                        mouse->buttons[index].curr = Input_Mouse_Button_Released;
                     }
-                    else if (!button_is_down && (mouse->buttons[index].prev == Mouse_Button_Released)) {
-                        mouse->buttons[index].curr = Mouse_Button_Up;
+                    else if (!button_is_down && (mouse->buttons[index].prev == Input_Mouse_Button_Released)) {
+                        mouse->buttons[index].curr = Input_Mouse_Button_Up;
                     }
                 }
             }
@@ -637,14 +638,9 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         }
 
 
-        #if 0
         //
         // Draw backbuffer to screen
-        InvalidateRect(hwnd, nullptr, false);
-        UpdateWindow(hwnd);
-        #else
         game.renderer->draw_to_screen();
-#endif
 
 
         //

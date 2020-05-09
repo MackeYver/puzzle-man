@@ -64,21 +64,32 @@ b32 init_game(Game *game) {
     // End of resource loading
     //
     //
-    
+
+
+    //
+    // Init editor
+    if (result) {
+        result = init_editor(&game->editor);
+        if (!result) {
+            LOG_ERROR_STR(&game->log, "failed to init editor", 0);
+        }
+    }
 
     
     //
     // Init game state
-    init_array_of_moves(&game->all_the_moves);
-    game->state = Game_State_Playing;    
-
-    result = load_level_from_disc(&game->current_level, &game->resources, "test.level_txt");
     if (result) {
-        create_maps_off_level(&game->current_level);
+        init_array_of_moves(&game->all_the_moves);
         game->state = Game_State_Playing;
-    }
-    else {
-        LOG_ERROR_STR(&game->log, "failed to load level", 0);
+        //result = load_level_from_disc(&game->current_level, &game->resources, "1.level_txt");
+        result = load_level(&game->current_level, &game->resources, "1.level_txt");
+        if (result) {
+            create_maps_off_level(&game->current_level);
+            game->state = Game_State_Playing;
+        }
+        else {
+            LOG_ERROR_STR(&game->log, "failed to load level", 0);
+        }
     }
 
     return result;
@@ -253,7 +264,7 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
     
 
     if (game->state == Game_State_Begin_Editing) {
-        begin_editing(&game->editor, level);
+        begin_editing(&game->editor, level, static_cast<Level_Render_Mode>(game->render_mode));
         game->state = Game_State_Editing;
     }
     else if (game->state == Game_State_End_Editing) {

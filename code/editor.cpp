@@ -11,16 +11,16 @@
 
 //
 // Mouse
-enum Mouse_Button_State {
-    Mouse_Button_Up = 0,
-    Mouse_Button_Pressed,
-    Mouse_Button_Down,
-    Mouse_Button_Released,
+enum Input_Mouse_Button_State {
+    Input_Mouse_Button_Up = 0,
+    Input_Mouse_Button_Pressed,
+    Input_Mouse_Button_Down,
+    Input_Mouse_Button_Released,
 };
 
 struct Mouse_Button {
-    Mouse_Button_State prev;
-    Mouse_Button_State curr;
+    Input_Mouse_Button_State prev;
+    Input_Mouse_Button_State curr;
 };
 
 struct Input_Mouse {
@@ -30,9 +30,10 @@ struct Input_Mouse {
     union {
         struct {
             Mouse_Button left_button;
+            Mouse_Button middle_button;
             Mouse_Button right_button;
         };
-        Mouse_Button buttons[2];
+        Mouse_Button buttons[3];
     };
 };
 
@@ -113,15 +114,28 @@ struct Selected_Object {
 enum Level_Editor_State {
     Level_Editor_State_Editing,
     Level_Editor_State_Menu,
+    Level_Editor_State_Menu_Input_Name,
+    Level_Editor_State_Menu_Input_Load,
+};
+
+enum Level_Editor_Message {
+    Level_Editor_Message_None,
+    Level_Editor_Message_Unsaved_Changes,
+    Level_Editor_Message_Load_Failed,
+
+    Level_Editor_Message_Count,
 };
 
 struct Level_Editor {
     Level level;
     Editor_Input input;
     Tile *hot_tile = nullptr;
-    Selected_Object selected_objects[2];
+    Selected_Object selected_object;
     u32 render_mode;
-    Level_Editor_State state;    
+    Level_Editor_State state;
+    Level_Editor_Message message = Level_Editor_Message_None;
+    u32 current_level_count = 0;
+    b32 level_has_unsaved_changes = false;
 };
 
 
@@ -154,6 +168,17 @@ static void begin_keyboard_input(Input_Keyboard *keyboard, f32 value) {
     begin_keyboard_input(keyboard, Input_Keyboard_Mode_Float);
     
     u32 char_num = _snprintf_s(keyboard->buffer, kInput_Keyboard_Buffer_Length, _TRUNCATE, "%g", value);
+    keyboard->cursor_position = char_num;
+    keyboard->end_position = char_num;
+
+    scan_for_decimal(keyboard);
+}
+
+
+static void begin_keyboard_input(Input_Keyboard *keyboard, u32 value) {
+    begin_keyboard_input(keyboard, Input_Keyboard_Mode_Integer);
+    
+    u32 char_num = _snprintf_s(keyboard->buffer, kInput_Keyboard_Buffer_Length, _TRUNCATE, "%u", value);
     keyboard->cursor_position = char_num;
     keyboard->end_position = char_num;
 
@@ -305,17 +330,51 @@ static u32 get_cursor_position_in_pixels(Input_Keyboard *keyboard, Font *font, C
 // Init and fini
 //
 
-static void fini_editor(Level_Editor *editor) {
-    fini_level(&editor->level);
+static b32 init_editor(Level_Editor *editor) {
+    Tokenizer tokenizer;
+    b32 result = init_tokenizer(&tokenizer, "data\\levels\\", "editor_data.txt");
+    if (result) {
+        Token token;
+        require_identifier_with_exact_name(&tokenizer, &token, "Current_level_count");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_number);
+        editor->current_level_count = get_u32_from_token(&token, &result);
+
+        editor->message = Level_Editor_Message_None;
+    }
+    
+    fini_tokenizer(&tokenizer);
+
+    return result;
 }
 
-static void begin_editing(Level_Editor *editor, Level *level) {
+
+static void fini_editor(Level_Editor *editor) {   
+    fini_level(&editor->level);   
+
+
+    //
+    // Write editor state to file
+    HANDLE file_handle;
+    b32 result = win32_open_file_for_writing("data\\levels\\editor_data.txt", &file_handle);
+    assert(result);    
+
+    u32 constexpr buffer_size = 512;
+    char buffer[buffer_size];
+    DWORD bytes_written;
+    DWORD bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Current_level_count:%u", editor->current_level_count);
+    WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+    assert(bytes_to_write == bytes_written);
+    
+    CloseHandle(file_handle);
+}
+
+
+static void begin_editing(Level_Editor *editor, Level *level, Level_Render_Mode render_mode) {
     editor->state = Level_Editor_State_Editing;
-    editor->render_mode = Level_Render_Mode_All;
-    editor->selected_objects[0].type  = Object_Type_Tile;
-    editor->selected_objects[0].value = Tile_Type_Wall_0;
-    editor->selected_objects[1].type  = Object_Type_Tile;
-    editor->selected_objects[1].value = Tile_Type_Floor;
+    editor->render_mode = render_mode;
+    editor->selected_object.type  = Object_Type_Tile;
+    editor->selected_object.value = Tile_Type_Wall_0;
     
     init_level_as_copy_of_level(&editor->level, level, &level->original_state);
     create_maps_off_level(&editor->level);
@@ -339,7 +398,7 @@ static void clear_tile(Level_State *state, Tile *tile) {
         state->score -= kDot_Small_Value;
         tile->item.type = Item_Type_None;
     }
-    else if (tile->item.type == Item_Type_Dot_Small) {
+    else if (tile->item.type == Item_Type_Dot_Large) {
         state->score -= kDot_Large_Value;
         tile->item.type = Item_Type_None;
     }
@@ -348,6 +407,10 @@ static void clear_tile(Level_State *state, Tile *tile) {
         Actor *actor = get_actor(&state->actors, tile->actor_id);
         if (actor_is_ghost(actor)) {
             state->score -= kGhost_Value;
+            --state->ghost_count;
+        }
+        else if (actor->type == Actor_Type_Pacman) {
+            --state->pacman_count;
         }
 
         delete_actor(&state->actors, tile->actor_id);        
@@ -374,6 +437,7 @@ char get_char_from_actor_type(Actor *actor) {
             case Actor_Type_Ghost_Cyan:   { result = '3'; } break;
             case Actor_Type_Ghost_Orange: { result = '4'; } break;
             case Actor_Type_Pacman:       { result = 'P'; } break;
+            default:                      { result = '?'; } break;
         }
     }
     
@@ -414,20 +478,27 @@ char get_char_from_item_type(Tile *tile) {
 static b32 save_level(Level *level) {
     b32 result = false;
 
+    u32 const buffer_size = 512;
+    char buffer[buffer_size];
+    _snprintf_s(buffer, buffer_size, _TRUNCATE, "data//levels//%u.level_txt", level->id);
+
     HANDLE file_handle;
-    result = win32_open_file_for_writing("data//levels//save_test.level_txt", &file_handle);
+    result = win32_open_file_for_writing(buffer, &file_handle);
     if (result) {
         DWORD bytes_written;
-        char buffer[512];
-        DWORD bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "Name:%s\n", level->name);
+        DWORD bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Name:\"%s\"\n", level->name);
         result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
         assert(bytes_to_write == bytes_written);
 
-        bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "Width:%u\n", level->width);
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "ID:%u\n", level->id);
         result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
         assert(bytes_to_write == bytes_written);
 
-        bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "Height:%u\n", level->width);
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Width:%u\n", level->width);
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);
+
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Height:%u\n", level->width);
         result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
         assert(bytes_to_write == bytes_written);
 
@@ -435,14 +506,14 @@ static b32 save_level(Level *level) {
 
         //
         // Tiles        
-        bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "Layer_tiles:\n");
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_tiles:\n");
         result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
         assert(bytes_to_write == bytes_written);        
         
         for (u32 y = 0; y < level->height; ++y) {
             for (u32 x = 0; x < level->width; ++x) {
                 Tile *tile = get_tile_at(level, x, y);
-                bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "%c", get_char_from_tile_type(tile));
+                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_tile_type(tile));
                 result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
                 assert(bytes_to_write == bytes_written);
             }
@@ -451,14 +522,14 @@ static b32 save_level(Level *level) {
 
         //
         // Items
-        bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "Layer_items:\n");
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_items:\n");
         result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
         assert(bytes_to_write == bytes_written);
         
         for (u32 y = 0; y < level->height; ++y) {
             for (u32 x = 0; x < level->width; ++x) {
                 Tile *tile = get_tile_at(level, x, y);
-                bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "%c", get_char_from_item_type(tile));
+                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_item_type(tile));
                 result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
                 assert(bytes_to_write == bytes_written);
             }
@@ -467,7 +538,7 @@ static b32 save_level(Level *level) {
 
         //
         // Actors
-        bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "Layer_actors:\n");
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_actors:\n");
         result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
         assert(bytes_to_write == bytes_written);
         
@@ -475,7 +546,7 @@ static b32 save_level(Level *level) {
             for (u32 x = 0; x < level->width; ++x) {
                 Tile *tile = get_tile_at(level, x, y);
                 Actor *actor = get_actor(&state->actors, tile->actor_id);
-                bytes_to_write = _snprintf_s(buffer, 512, _TRUNCATE, "%c", get_char_from_actor_type(actor));
+                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_actor_type(actor));
                 result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
                 assert(bytes_to_write == bytes_written);
             }
@@ -483,6 +554,292 @@ static b32 save_level(Level *level) {
         }
         
         CloseHandle(file_handle);
+    }
+
+    return result;
+}
+
+
+static b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, char c, u32 x, u32 y) {
+    b32 result = false;
+
+    Actor_Type constexpr all_actor_types[] = {Actor_Type_Pacman, Actor_Type_Ghost_Red, Actor_Type_Ghost_Pink, Actor_Type_Ghost_Cyan, Actor_Type_Ghost_Orange};
+    s32 actor_type_index = -1;
+    if (c == 'P') {
+        actor_type_index = 0;
+    } else {
+        actor_type_index = c - '0';
+    }
+    
+    if (actor_type_index >= 0 && actor_type_index < 5) {        
+        Actor *curr_actor = new_actor(&state->actors);
+        assert(curr_actor);
+
+        result = true;
+        curr_actor->position = V2u(x, y);
+        curr_actor->type = all_actor_types[actor_type_index];
+        curr_actor->state = Actor_State_Idle;
+        curr_actor->direction = Direction_Right;
+
+        Tile *curr_tile = get_tile_at(level, state, V2u(x, y));
+        assert(curr_tile);
+        curr_tile->actor_id = curr_actor->id;
+
+        
+        //
+        // Ghost
+        if (actor_type_index > 0) {
+            curr_actor->mode = Actor_Mode_Predator;
+            state->score += kGhost_Value;
+            ++state->ghost_count;
+        }
+
+    
+        //
+        // Pacman
+        else {
+            if (state->pacman_count == 0) {
+                curr_actor->mode = Actor_Mode_Prey;
+                level->pacman_id = curr_actor->id;
+                ++state->pacman_count;
+            }
+            else {
+                if (tokenizer) {
+                    tokenizer->error = true;
+                    _snprintf_s(tokenizer->error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found more than one pacman",
+                                tokenizer->path_and_name, tokenizer->line_number, tokenizer->line_position);
+                }
+                result = false;
+            }
+        }
+    }
+
+    return result;
+}
+
+
+static b32 load_level(Level *level, Resources *resources, char const *name) {
+    b32 result = false;    
+
+    Tokenizer tokenizer;
+    result = init_tokenizer(&tokenizer, "data\\levels\\", name);
+    if (result) {
+        fini_level(level);
+        init_level(level, resources);
+    
+        eat_spaces_and_newline(&tokenizer);
+        Token token;
+
+        // Name of level
+        require_identifier_with_exact_name(&tokenizer, &token, "Name");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_string);
+        _snprintf_s(level->name, kLevel_Name_Max_Length, _TRUNCATE, "%s", token.data);
+
+        // Level id
+        require_identifier_with_exact_name(&tokenizer, &token, "ID");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_number);
+        level->id = get_u32_from_token(&token);
+
+        //
+        // Width
+        require_identifier_with_exact_name(&tokenizer, &token, "Width");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_number);
+        level->width = get_u32_from_token(&token);
+
+        //
+        // Height
+        require_identifier_with_exact_name(&tokenizer, &token, "Height");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_number);
+        level->height = get_u32_from_token(&token);
+
+        
+        //
+        // Tiles
+        require_identifier_with_exact_name(&tokenizer, &token, "Layer_tiles");
+        require_token(&tokenizer, &token, Token_colon);
+        eat_spaces_and_newline(&tokenizer);
+        reload(&tokenizer);
+
+        Level_State *state = &level->original_state;
+        state->tile_count = level->width * level->height;
+        state->tiles = static_cast<Tile *>(calloc(state->tile_count, sizeof(Tile)));
+        assert(state->tiles);
+
+        b32 should_loop = !tokenizer.error;
+        b32 should_advance = true;
+        
+        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
+        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
+            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
+                Tile *tile = &state->tiles[(y * level->width) + x];
+
+                switch (tokenizer.curr_char) {
+                    case '.': {
+                        tile->type = Tile_Type_None;
+                    } break;
+
+                    case '-': {
+                        tile->type = Tile_Type_Floor;
+                    } break;
+                        
+                    case 'W': {
+                        tile->type = Tile_Type_Wall_0;
+                    } break;
+
+                    default: {                    
+                        token = get_token(&tokenizer);
+                        if (token.type == Token_comment) {
+                            skip_to_next_line(&tokenizer);
+                            should_advance = false;
+                        }
+                        else {
+                            tokenizer.error = true;
+                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the tile layer",
+                                        tokenizer.path_and_name, token.line_number, token.line_position);
+                            should_loop = false;
+                        }
+                    } break;
+                }
+
+                if (should_advance) {
+                    advance(&tokenizer);                
+                }
+                should_advance = true;
+
+                eat_spaces_and_newline(&tokenizer);
+                reload(&tokenizer);
+            }
+        }
+
+
+        //
+        // Items
+        require_identifier_with_exact_name(&tokenizer, &token, "Layer_items");
+        require_token(&tokenizer, &token, Token_colon);
+        eat_spaces_and_newline(&tokenizer);
+        reload(&tokenizer);
+        
+        should_loop = !tokenizer.error;
+        should_advance = true;
+        
+        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
+        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
+            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
+                Tile *tile = &state->tiles[(y * level->width) + x];
+
+                switch (tokenizer.curr_char) {
+                    case '.': {
+                        tile->item.type = Item_Type_None;
+                        tile->item.value = 0;
+                    } break;
+
+                    case '+': {
+                        tile->item.type = Item_Type_Dot_Small;
+                        tile->item.value = kDot_Small_Value;
+                        state->score += tile->item.value;
+                    } break;
+
+                    case 'X': {
+                        tile->item.type = Item_Type_Dot_Large;
+                        tile->item.value = kDot_Large_Value;
+                        state->score += tile->item.value;
+                    } break;
+                        
+                    default: {                    
+                        token = get_token(&tokenizer);
+                        if (token.type == Token_comment) {
+                            skip_to_next_line(&tokenizer);
+                            should_advance = false;
+                        }
+                        else {
+                            tokenizer.error = true;
+                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the items layer",
+                                        tokenizer.path_and_name, token.line_number, token.line_position);
+                            should_loop = false;
+                        }
+                    } break;
+                }
+
+                if (should_advance) {
+                    advance(&tokenizer);                
+                }
+                should_advance = true;
+
+                eat_spaces_and_newline(&tokenizer);
+                reload(&tokenizer);
+            }
+        }
+
+
+        //
+        // Actors
+        require_identifier_with_exact_name(&tokenizer, &token, "Layer_actors");
+        require_token(&tokenizer, &token, Token_colon);
+        eat_spaces_and_newline(&tokenizer);
+        reload(&tokenizer);
+        
+        should_loop = !tokenizer.error;
+        should_advance = true;
+        
+        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
+        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
+            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
+                Tile *tile = &state->tiles[(y * level->width) + x];
+
+                switch (tokenizer.curr_char) {
+                    case '.': {
+                        tile->actor_id = kActor_ID_Null;
+                    } break;
+                        
+                    case 'P':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4': {
+                        should_loop = add_actor(&tokenizer, level, state, tokenizer.curr_char, x, y);                        
+                    } break;
+                        
+                    default: {                    
+                        token = get_token(&tokenizer);
+                        if (token.type == Token_comment) {
+                            skip_to_next_line(&tokenizer);
+                            should_advance = false;
+                        }
+                        else {
+                            tokenizer.error = true;
+                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the actor layer",
+                                        tokenizer.path_and_name, token.line_number, token.line_position);
+                            should_loop = false;
+                        }
+                    } break;
+                }
+
+                if (should_advance) {
+                    advance(&tokenizer);                
+                }
+                should_advance = true;
+
+                eat_spaces_and_newline(&tokenizer);
+                reload(&tokenizer);
+            }
+        }
+        
+
+
+        //
+        // Done
+        adjust_walls_in_level(level, &level->original_state);        
+        copy_level_state(&level->states[0], &level->original_state);
+        level->first_valid_state_index = 0;
+        level->last_valid_state_index = 0;
+        level->current_state_index = 0;
+        level->current_state = &level->states[0];
+
+        fini_tokenizer(&tokenizer);
     }
 
     return result;
@@ -497,8 +854,8 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
     
     //
     // TODO: handle window and cell sizes properly!
-    u32 cell_size = renderer->get_backbuffer_width() / level->width;
-    assert(cell_size == cell_size);
+    u32 cell_size = kCell_Size;//renderer->get_backbuffer_width() / level->width;
+    //assert(cell_size == kCell_Size);
  
    
     //
@@ -520,7 +877,10 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
 
 
         b32 changed_in_this_frame = false;
-        editor->hot_tile = nullptr;   
+        editor->hot_tile = nullptr;
+        Tile *hot_tile = editor->hot_tile;
+        Level_State *current_state = editor->level.current_state;
+        Selected_Object *selected_object = &editor->selected_object;
         
         if (mouse->is_inside) {
             v2u Pmc = V2u(static_cast<u32>(floorf(mouse->position.x / cell_size)),
@@ -530,60 +890,83 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                 v2u P = V2u(cell_size * Pmc.x, cell_size * Pmc.y);
 
                 Tile *tile = get_tile_at(&editor->level, Pmc);
-                editor->hot_tile = tile;
+                hot_tile = tile;
 
                 renderer->draw_rectangle_outline(P, static_cast<u32>(cell_size), static_cast<u32>(cell_size), v4u8_yellow);
-            }
+            }            
 
-            if (editor->hot_tile) {
-                if (mouse->left_button.curr == Mouse_Button_Pressed) {
-                    if (editor->selected_objects[0].type == Object_Type_Tile) {
-                        clear_tile(editor->level.current_state, editor->hot_tile);
-                        editor->hot_tile->type = static_cast<Tile_Type>(editor->selected_objects[0].value);
+            if (hot_tile) {
+                if (mouse->left_button.curr == Input_Mouse_Button_Pressed) {
+                    if (selected_object->type == Object_Type_Tile) {
+                        clear_tile(current_state, hot_tile);
+                        hot_tile->type = static_cast<Tile_Type>(selected_object->value);
                     }
-                    else if (editor->selected_objects[0].type == Object_Type_Item) {
-                        Item_Type item_type = static_cast<Item_Type>(editor->selected_objects[0].value);
-                        clear_tile(editor->level.current_state, editor->hot_tile);
+                    else if (selected_object->type == Object_Type_Item) {
+                        Item_Type item_type = static_cast<Item_Type>(selected_object->value);
+                        clear_tile(current_state, hot_tile);
                         
-                        editor->hot_tile->item.type = item_type;
+                        hot_tile->item.type = item_type;
                         
-                        if (item_type == Item_Type_Dot_Small)  editor->level.current_state->score += kDot_Small_Value;
-                        if (item_type == Item_Type_Dot_Large)  editor->level.current_state->score += kDot_Large_Value;
+                        if (item_type == Item_Type_Dot_Small)  current_state->score += kDot_Small_Value;
+                        if (item_type == Item_Type_Dot_Large)  current_state->score += kDot_Large_Value;
                     }
-                    else if (editor->selected_objects[0].type == Object_Type_Actor) {
-                        Actor_Type type = static_cast<Actor_Type>(editor->selected_objects[0].value);
-                        clear_tile(editor->level.current_state, editor->hot_tile);                        
-                        add_actor(nullptr, &editor->level, editor->level.current_state, Pmc.x, Pmc.y, type, false);
+                    else if (selected_object->type == Object_Type_Actor) {
+                        clear_tile(current_state, hot_tile);
+                        Actor_Type type = static_cast<Actor_Type>(selected_object->value);
+                        if (type == Actor_Type_Pacman && current_state->pacman_count > 0) {
+                            Actor *pacman = get_pacman(&editor->level);
+                            if (pacman) {
+                                pacman->position = Pmc;
+                                hot_tile->actor_id = pacman->id;
+                            }
+                        }
+                        else {
+                            clear_tile(current_state, hot_tile);     
+                            add_actor(nullptr, &editor->level, current_state, Pmc.x, Pmc.y, type, false);
+                        }
                     }
                     changed_in_this_frame = true;
+                    editor->level_has_unsaved_changes = true;
                 }
-                else if (mouse->right_button.curr == Mouse_Button_Pressed) {
-                    if (editor->selected_objects[1].type == Object_Type_Tile) {
-                        clear_tile(editor->level.current_state, editor->hot_tile);
-                        editor->hot_tile->type = static_cast<Tile_Type>(editor->selected_objects[1].value);
+                else if (mouse->middle_button.curr == Input_Mouse_Button_Pressed) {
+                    if (hot_tile->item.type != Item_Type_None) {
+                        selected_object->type = Object_Type_Item;
+                        selected_object->value = hot_tile->item.type;
                     }
-                    else if (editor->selected_objects[1].type == Object_Type_Item) {
-                        Item_Type item_type = static_cast<Item_Type>(editor->selected_objects[1].value);
-                        clear_tile(editor->level.current_state, editor->hot_tile);
-                        
-                        editor->hot_tile->item.type = item_type;
-                        
-                        if (item_type == Item_Type_Dot_Small)  editor->level.current_state->score += kDot_Small_Value;
-                        if (item_type == Item_Type_Dot_Large)  editor->level.current_state->score += kDot_Large_Value;
+                    else if (hot_tile->actor_id.index < 0xFFFF) {
+                        selected_object->type = Object_Type_Actor;
+                        Actor *actor = get_actor(&current_state->actors, hot_tile->actor_id);
+                        selected_object->value = actor->type;
                     }
-                    else if (editor->selected_objects[1].type == Object_Type_Actor) {
-                        Actor_Type type = static_cast<Actor_Type>(editor->selected_objects[1].value);
-                        clear_tile(editor->level.current_state, editor->hot_tile);                        
-                        add_actor(nullptr, &editor->level, editor->level.current_state, Pmc.x, Pmc.y, type, false);
+                    else {
+                        selected_object->type = Object_Type_Tile;
+                        selected_object->value = hot_tile->type;
                     }
+                }
+                else if (mouse->right_button.curr == Input_Mouse_Button_Pressed) {
+                    if ((hot_tile->item.type != Item_Type_None) || (hot_tile->actor_id.index < 0xFFFF)) {
+                        hot_tile->type = Tile_Type_Floor;
+                    }                    
+                    else if (hot_tile->type == Tile_Type_None) {
+                        hot_tile->type = Tile_Type_Floor;
+                    }
+                    else if (hot_tile->type == Tile_Type_Floor) {
+                        hot_tile->type = Tile_Type_None;
+                    }
+                    else {
+                        hot_tile->type = Tile_Type_Floor;
+                    }
+                    
+                    clear_tile(current_state, hot_tile);
                     changed_in_this_frame = true;
+                    editor->level_has_unsaved_changes = true;
                 }
             }
         }
 
 
         if (changed_in_this_frame) {        
-            adjust_walls_in_level(level, level->current_state, level->resources);
+            adjust_walls_in_level(level, current_state);
             create_maps_off_level(&editor->level);
         }  
     }
@@ -593,7 +976,7 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
     //
     // Menu
     //
-    else if (editor->state == Level_Editor_State_Menu) {
+    else if (editor->state >= Level_Editor_State_Menu) {
         v2u Pmc = V2u(static_cast<u32>(floorf(mouse->position.x / cell_size)),
                       static_cast<u32>(floorf(mouse->position.y / cell_size)));
         b32 mouse_is_inside = mouse->is_inside;
@@ -612,30 +995,38 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
         v2u Pc = V2u(1, level->height - 1);
         v4u8 colour = v4u8_white;
 
+        //Tile *hot_tile = editor->hot_tile;
+        //Level_State *current_state = editor->level.current_state;
+        Selected_Object *selected_object = &editor->selected_object;
+        Input_Keyboard *keyboard = &editor->input.keyboard;
+
         
         //
         // Print name
+        if (mouse_is_inside && (mouse->left_button.curr == Input_Mouse_Button_Pressed)) {
+            if ((Pmc.y >= Pc.y) && (editor->state != Level_Editor_State_Menu_Input_Name)) {
+                cancel_keyboard_input(keyboard);
+                begin_keyboard_input(keyboard, level->name);
+                editor->state = Level_Editor_State_Menu_Input_Name;
+            }
+            else if ((Pmc.y < Pc.y) && (editor->state == Level_Editor_State_Menu_Input_Name)) {
+                cancel_keyboard_input(keyboard);
+                keyboard->state = Input_Keyboard_State_Inactive;
+                editor->state = Level_Editor_State_Menu;
+            }
+        }
+
         {
             char buffer[512];
-            u32 static debug_counter = 0;
-            v4u8 text_colour = colour;
+            v4u8 text_colour = colour;            
 
-            if ((mouse->left_button.curr == Mouse_Button_Pressed) && mouse_is_inside) {
-                if ((Pmc.y >= Pc.y) && (editor->input.keyboard.state != Input_Keyboard_State_Receive)) {
-                    begin_keyboard_input(&editor->input.keyboard, level->name);
-                }
-                else if (editor->input.keyboard.state == Input_Keyboard_State_Receive) {
-                    cancel_keyboard_input(&editor->input.keyboard);
-                }
-            }
-
-            if (editor->input.keyboard.state == Input_Keyboard_State_Receive) {
-                _snprintf_s(buffer, kLevel_Name_Max_Length, _TRUNCATE, "%s", editor->input.keyboard.buffer);
+            if ((editor->state == Level_Editor_State_Menu_Input_Name)  && (keyboard->state == Input_Keyboard_State_Receive)) {
+                _snprintf_s(buffer, kLevel_Name_Max_Length, _TRUNCATE, "%s", keyboard->buffer);
                 text_colour = v4u8_yellow;
             }
-            else if (editor->input.keyboard.state == Input_Keyboard_State_Done) {
-                _snprintf_s(editor->level.name, kLevel_Name_Max_Length, _TRUNCATE, "%s", editor->input.keyboard.buffer);
-                cancel_keyboard_input(&editor->input.keyboard);
+            else if ((editor->state == Level_Editor_State_Menu_Input_Name)  && (keyboard->state == Input_Keyboard_State_Done)) {
+                _snprintf_s(editor->level.name, kLevel_Name_Max_Length, _TRUNCATE, "%s", keyboard->buffer);
+                cancel_keyboard_input(keyboard);
             }   
             else {
                 _snprintf_s(buffer, 512, _TRUNCATE, "%s", editor->level.name);
@@ -647,17 +1038,24 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
 
             v2u Pt = Pc * cell_size;
 
-            if (editor->input.keyboard.state == Input_Keyboard_State_Receive) {
-                u32 cursor_x = get_cursor_position_in_pixels(&editor->input.keyboard, font, nullptr);
+            if ((editor->state == Level_Editor_State_Menu_Input_Name)  && (keyboard->state == Input_Keyboard_State_Receive)) {
+                u32 cursor_x = get_cursor_position_in_pixels(keyboard, font, nullptr);
                 renderer->draw_filled_rectangle(Pt + V2u(caption_dim.x + cursor_x, 0) - V2u(0, 5), 12, 24, v4u8_red);
             }
             
             renderer->print(font, Pt, "Name: ", colour);
-            renderer->print(font, Pt + V2u(caption_dim.x, 0), buffer, text_colour);            
-            
-            Pc.y -= 2;
-            
-            ++debug_counter;
+            renderer->print(font, Pt + V2u(caption_dim.x, 0), buffer, text_colour);
+            --Pc.y;
+
+            Pt = Pc * cell_size;
+            char const *id_caption = "ID: ";
+            v2u id_caption_dim = get_text_dim(font, id_caption);
+
+            _snprintf_s(buffer, kLevel_Name_Max_Length, _TRUNCATE, "%u", level->id);
+            v2u id_value_dim = get_text_dim(font, buffer);
+            renderer->print(font, Pt + V2u(0               , (cell_size - id_value_dim.y) / 2), id_caption, colour);
+            renderer->print(font, Pt + V2u(id_caption_dim.x, (cell_size - id_value_dim.y) / 2), buffer, text_colour);
+            --Pc.y;
         }
         
 
@@ -676,17 +1074,13 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                 Tile tile = empty_tile_of_type(tiles[index]);                
                 draw_tile(renderer, editor->level.resources, &tile, P);
 
-                if (mouse_is_inside && Pmc.x == Pc.x && Pmc.y == Pc.y) {
+                if (mouse_is_inside && (Pmc.x == Pc.x && Pmc.y == Pc.y) && (editor->state == Level_Editor_State_Menu)) {
                     colour = v4u8_yellow;
 
-                    if (mouse->left_button.curr == Mouse_Button_Down) {
-                        editor->selected_objects[0].type = Object_Type_Tile;
-                        editor->selected_objects[0].value = tiles[index];
-                    }
-                    if (mouse->right_button.curr == Mouse_Button_Down) {
-                        editor->selected_objects[1].type = Object_Type_Tile;
-                        editor->selected_objects[1].value = tiles[index];
-                    }
+                    if (mouse->left_button.curr == Input_Mouse_Button_Down) {
+                        selected_object->type = Object_Type_Tile;
+                        selected_object->value = tiles[index];
+                    }                    
                 }
                 else {
                     colour = v4u8_white;
@@ -720,17 +1114,13 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                 tile.item.type = items[index];
                 draw_item(renderer, editor->level.resources, &tile, P);
                 
-                if (mouse_is_inside && Pmc.x == Pc.x && Pmc.y == Pc.y) {
+                if (mouse_is_inside && (Pmc.x == Pc.x && Pmc.y == Pc.y) && (editor->state == Level_Editor_State_Menu)) {
                     colour = v4u8_yellow;
                     
-                    if (mouse->left_button.curr == Mouse_Button_Down) {
-                        editor->selected_objects[0].type = Object_Type_Item;
-                        editor->selected_objects[0].value = items[index];
-                    }
-                    if (mouse->right_button.curr == Mouse_Button_Down) {
-                        editor->selected_objects[1].type = Object_Type_Item;
-                        editor->selected_objects[1].value = items[index];
-                    }
+                    if (mouse->left_button.curr == Input_Mouse_Button_Down) {
+                        selected_object->type = Object_Type_Item;
+                        selected_object->value = items[index];
+                    }                    
                 }
                 else {
                     colour = v4u8_white;
@@ -772,16 +1162,12 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                     draw_pacman(renderer, editor->level.resources, &actor, 1000000);
                 }
                 
-                if (mouse_is_inside && Pmc.x == Pc.x && Pmc.y == Pc.y) {
+                if (mouse_is_inside && (Pmc.x == Pc.x && Pmc.y == Pc.y) && (editor->state == Level_Editor_State_Menu)) {
                     colour = v4u8_yellow;
                     
-                    if (mouse->left_button.curr == Mouse_Button_Down) {
-                        editor->selected_objects[0].type = Object_Type_Actor;
-                        editor->selected_objects[0].value = actors[index];
-                    }
-                    if (mouse->right_button.curr == Mouse_Button_Down) {
-                        editor->selected_objects[1].type = Object_Type_Actor;
-                        editor->selected_objects[1].value = actors[index];
+                    if (mouse->left_button.curr == Input_Mouse_Button_Down) {
+                        selected_object->type = Object_Type_Actor;
+                        selected_object->value = actors[index];
                     }
                 }
                 else {
@@ -802,27 +1188,84 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
         //
         // New, Save and Load
         {
-            char const *text[3] = {"New", "Save", "Load"};
+            b32 static pressed_load_once = false; // DEBUG
             
-            for (u32 index = 0; index < 3; ++index) {
+            char const *text[4] = {"New", "Save", "Load", "Copy"};
+            
+            for (u32 index = 0; index < Array_Count(text); ++index) {
                 v2u text_dim = get_text_dim(font, text[index]);
                 Pc = V2u(2 * index + 1, 1);
                 v2u P = V2u(cell_size * Pc.x, cell_size * Pc.y);
                 v2u offset = V2u((cell_size - text_dim.x) / 2, (cell_size - text_dim.y) / 2);
                 colour = v4u8_white;
 
-                if (mouse_is_inside && Pmc.x == Pc.x && Pmc.y == Pc.y) {
+                if (mouse_is_inside && (Pmc.x == Pc.x && Pmc.y == Pc.y) && (editor->state == Level_Editor_State_Menu)) {
                     colour = v4u8_yellow;
                 
-                    if (mouse->left_button.curr == Mouse_Button_Down) {
+                    if (mouse->left_button.curr == Input_Mouse_Button_Pressed) {
                         if (index == 0) {
+                            //
+                            // New level
+                            Resources *resources = level->resources;
+                            
+                            fini_level(level);
+                            init_level(level, resources);
+                            level->id = ++editor->current_level_count;
+                            _snprintf_s(level->name, kLevel_Name_Max_Length, _TRUNCATE, "Level_%u", level->id);
+
+                            // TODO: handle different level sizes!
+                            level->width = 11;
+                            level->height = 11;
+                            Level_State *state = &level->original_state;
+                            state->tile_count = level->width * level->height;
+                            state->tiles = static_cast<Tile *>(malloc(state->tile_count * sizeof(Tile)));
+                            for (u32 tile_index = 0; tile_index < state->tile_count; ++tile_index) {
+                                empty_tile(&state->tiles[tile_index]);
+                            }
+
+                            copy_level_state(level->current_state, &level->original_state);
                         }
                         else if (index == 1) {
+                            //
+                            // Save level
+                            copy_level_state(&level->original_state, level->current_state);
                             save_level(level);
+                            editor->level_has_unsaved_changes = false;                            
                         }
                         if (index == 2) {
-                        }
+                            //
+                            // Load level
+                            if (editor->level_has_unsaved_changes && !pressed_load_once) {
+                                pressed_load_once = true;
+                            }
+                            else {                                
+                                editor->state = Level_Editor_State_Menu_Input_Load;
+                                pressed_load_once = false;
+                            }
 
+                            if (editor->state == Level_Editor_State_Menu_Input_Load) {
+                                colour = v4u8_yellow;
+                            }
+                        }
+                        else if (index == 3) {
+                            //
+                            // Copy level
+                            if (editor->level_has_unsaved_changes && !pressed_load_once) {
+                                pressed_load_once = true;
+                            }
+                            else {
+                                if (editor->level_has_unsaved_changes) {
+                                    copy_level_state(&level->original_state, level->current_state);
+                                    save_level(level);
+                                    editor->level_has_unsaved_changes = false;
+                                }                                
+
+                                char temp_text_buffer[kLevel_Name_Max_Length];
+                                _snprintf_s(temp_text_buffer, kLevel_Name_Max_Length, _TRUNCATE, "Copy of %s", level->name);
+                                _snprintf_s(level->name, kLevel_Name_Max_Length, _TRUNCATE, "%s", temp_text_buffer);
+                                level->id = ++editor->current_level_count;
+                            }
+                        }
                     }
                 
                     renderer->draw_rectangle_outline(P, cell_size, cell_size, colour);
@@ -832,14 +1275,100 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                 renderer->print(font, P + offset, text[index], colour);
             }
         }
-    
+
 
         //
-        // Print "Editor" in the bottom-right corner to indicate that we're in the editor now
-        {
-            char const *text = "Editor";
-            v2u text_dim = get_text_dim(font, text);
-            renderer->print(font, V2u(renderer->get_backbuffer_width() - text_dim.x - 10, 10), text);
+        // Editor message
+        if ((editor->message == Level_Editor_Message_None) && (editor->level_has_unsaved_changes)) {
+            editor->message = Level_Editor_Message_Unsaved_Changes;
         }
+    
+        if (editor->message != Level_Editor_Message_None) {
+            switch (editor->message) {
+                case Level_Editor_Message_Unsaved_Changes: {
+                    if (editor->level_has_unsaved_changes) {
+                    char constexpr *unsaved_text = "Level has unsaved changes";
+                    v2u text_dim = get_text_dim(font, unsaved_text);
+                    renderer->print(font, V2u(cell_size * 1, (cell_size * 1) - text_dim.y), unsaved_text, v4u8_red);
+                    }
+                    else {
+                        editor->message = Level_Editor_Message_None;
+                    }
+                } break;
+
+                case Level_Editor_Message_Load_Failed: {
+                    char constexpr *unsaved_text = "Load failed";
+                    v2u text_dim = get_text_dim(font, unsaved_text);
+                    renderer->print(font, V2u(cell_size * 1, (cell_size * 1) - text_dim.y), unsaved_text, v4u8_red);
+                }
+            }
+        }
+    }
+
+
+    //
+    // Load input
+    if (editor->state == Level_Editor_State_Menu_Input_Load) {
+        Input_Keyboard *keyboard = &editor->input.keyboard;
+        
+        if (keyboard->state == Input_Keyboard_State_Cancel) {
+            editor->state = Level_Editor_State_Menu;
+            cancel_keyboard_input(keyboard);
+            keyboard->state = Input_Keyboard_State_Inactive;
+            if (editor->message == Level_Editor_Message_Load_Failed)  editor->message = Level_Editor_Message_None;
+        }        
+        else {                        
+            char buffer[512];
+            buffer[0] = '\0';
+                    
+            if (keyboard->state == Input_Keyboard_State_Inactive) {
+                begin_keyboard_input(keyboard, Input_Keyboard_Mode_Integer);
+            }
+            else if (keyboard->state == Input_Keyboard_State_Receive) {
+                _snprintf_s(buffer, kLevel_Name_Max_Length, _TRUNCATE, "%s", keyboard->buffer);
+            }                    
+            else if (keyboard->state == Input_Keyboard_State_Done) {
+                u32 constexpr file_to_load_size = kLevel_Name_Max_Length + 11;
+                char file_to_load[file_to_load_size];
+                _snprintf_s(file_to_load, file_to_load_size, _TRUNCATE, "%s.level_txt", keyboard->buffer);
+                        
+                b32 load_result = load_level(&editor->level, editor->level.resources, file_to_load);
+                if (load_result) {
+                    editor->level_has_unsaved_changes = false;
+                    editor->state = Level_Editor_State_Menu;
+                    editor->message = Level_Editor_Message_None;                    
+                }
+                else {
+                    editor->message = Level_Editor_Message_Load_Failed;
+                }
+
+                cancel_keyboard_input(keyboard);
+                keyboard->state = Input_Keyboard_State_Inactive;
+            }                       
+
+            char const *caption = "Load ID: ";
+            v2u caption_dim = get_text_dim(font, caption);
+            v2u name_dim = get_text_dim(font, buffer);
+                    
+            v2u Pt = V2u(1, 2) * cell_size;
+
+            if (keyboard->state == Input_Keyboard_State_Receive) {
+                u32 cursor_x = get_cursor_position_in_pixels(keyboard, font, nullptr);
+                renderer->draw_filled_rectangle(Pt + V2u(caption_dim.x + cursor_x, 0) - V2u(0, 5), 12, 24, v4u8_red);
+            }
+
+            v4u8 colour = v4u8_yellow;
+            renderer->print(font, Pt, caption, colour);
+            renderer->print(font, Pt + V2u(caption_dim.x, 0), buffer, colour);
+        }
+    }
+
+    
+    //
+    // Print "Editor" in the bottom-right corner to indicate that we're in the editor now
+    {
+        char const *text = "Editor";
+        v2u text_dim = get_text_dim(font, text);
+        renderer->print(font, V2u(renderer->get_backbuffer_width() - text_dim.x - 10, 10), text);
     }
 }

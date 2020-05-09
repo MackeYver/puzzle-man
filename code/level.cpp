@@ -79,7 +79,8 @@ struct Level {
     Resources *resources;
     
     Actor_ID pacman_id = {0xFFFF, 0xFFFF};
-    
+
+    u32 id;
     u32 width = 0;
     u32 height = 0;
 };
@@ -110,7 +111,7 @@ void free_level_state(Level_State *state) {
     }
 }
 
-// NOTE: level state 0 is the original state. Here we clear _all_ states, including state 0.
+
 void free_all_level_states(Level *level) {
     for (u32 index = 0; index < kLevel_States_Count; ++index) {
         free_level_state(&level->states[index]);
@@ -214,12 +215,6 @@ void save_current_level_state(Level *level) {
     // We assume that:
     //   first_index, last_index, current_index < kWorld_Level_States_Count
     //   current_index >= first_index && current_index <= last_index
-    //
-    
-    //
-    // NOTE: level state 0 is the original state, we don't mess with the original state.
-    //       When we load the level, we always load the original level into slot 0 and
-    //       then we copy that into slot 1. So state 1 is the first playable state.
     //
 
     u32 first_index = level->first_valid_state_index;
@@ -338,8 +333,9 @@ static void init_level_as_copy_of_level(Level *dst, Level *src, Level_State *sta
     dst->pacman_id = src->pacman_id;
     dst->width     = src->width;
     dst->height    = src->height;
+    dst->id        = src->id;    
 
-    _snprintf_s(dst->name, kLevel_Name_Max_Length, _TRUNCATE, "copy of %s", src->name);
+    _snprintf_s(dst->name, kLevel_Name_Max_Length, _TRUNCATE, "%s", src->name);
 }
 
 
@@ -348,6 +344,19 @@ static void init_level_as_copy_of_level(Level *dst, Level *src, Level_State *sta
 //
 // Queries
 //
+
+Tile *get_tile_at(Level *level, Level_State *state, v2u P) {
+    Tile *result = nullptr;    
+
+    if (state && state && state->tiles) {
+        if (P.x < level->width && P.y < level->height) {
+            result = &state->tiles[(level->width * P.y) + P.x];
+        }
+    }
+
+    return result;
+}
+
 
 Tile *get_tile_at(Level *level, v2u P) {
     Tile *result = nullptr;    
@@ -402,6 +411,7 @@ Actor *get_pacman(Level *level) {
 
     return result;
 }
+
 
 Actor *get_actor_at(Level *level, v2u P) {
     Actor *result = nullptr;
@@ -935,7 +945,7 @@ b32 parse_level(Tokenizer *tokenizer, Level *level, Level_State *state) {
     return result;
 }
 
-void adjust_walls_in_level(Level *level, Level_State *state, Resources *resources) {
+void adjust_walls_in_level(Level *level, Level_State *state) {
     for (u32 y = 0; y < level->height; ++y) {
         for (u32 x = 0; x < level->width; ++x) {
             u32 curr_index = (level->width * y) + x;
@@ -986,7 +996,7 @@ b32 load_level_from_disc(Level *level, Resources *resources, char const *filenam
             fini_level(level);
         }
         else {
-            adjust_walls_in_level(level, &level->original_state, resources);
+            adjust_walls_in_level(level, &level->original_state);
         }
     }    
     fini_tokenizer(&tokenizer);

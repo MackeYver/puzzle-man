@@ -279,7 +279,10 @@ b32 actor_type_is_ghost(Actor_Type type) {
 
 
 b32 actor_is_ghost(Actor *actor) {
-    b32 result = actor_type_is_ghost(actor->type);
+    b32 result = false;
+    if (actor) {
+        result = actor_type_is_ghost(actor->type);
+    }
     return result;
 }
 

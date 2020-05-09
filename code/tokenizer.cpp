@@ -54,7 +54,6 @@ struct Token {
     u32 length = 0;
     u32 line_number = 1;
     u32 line_position = 1;
-
 };
 
 
@@ -374,12 +373,24 @@ b32 require_identifier_with_exact_name(Tokenizer *tokenizer, Token *token, char 
 }
 
 
-u32 get_u32_from_token(Token *token) {
-    // TODO: add better error handling here!
-
-    u32 result = 0; 
-    size_t read = sscanf_s(token->data, "%u", &result);
-    assert(read == 1);
+u32 get_u32_from_token(Token *token, b32 *returned_valid_u32 = nullptr) {
+    u32 result = 0;
+    
+    if (token) {
+        size_t read = sscanf_s(token->data, "%u", &result);
+        if (read != 1) {
+            if (returned_valid_u32) {
+                result = 0;
+                *returned_valid_u32 = false;
+            }
+            else {
+                assert(0);
+            }
+        }
+        else if (returned_valid_u32) {
+            *returned_valid_u32 = true;
+        }
+    }
     
     return result;
 }

@@ -9,7 +9,7 @@
 //
 
 enum Item_Type {
-    Item_Type_None,
+    Item_Type_None = 0,
     Item_Type_Dot_Small,
     Item_Type_Dot_Large,
 
@@ -18,7 +18,7 @@ enum Item_Type {
 
 struct Item {
     Item_Type type = Item_Type_None;
-    u32 value = 0;
+    u16 value = 0;
 };
 
 
@@ -73,6 +73,13 @@ Tile empty_tile_of_type(Tile_Type type) {
     tile.type = type;
     return tile;
 }
+
+static void empty_tile(Tile *tile) {
+    tile->item.type = Item_Type_None;
+    tile->actor_id = {0xFFFF, 0xFFFF};
+    tile->type = Tile_Type_None;
+}
+
 
 b32 tile_has_wall(Tile *tile) {
     b32 result = false;
