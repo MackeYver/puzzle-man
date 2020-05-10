@@ -10,18 +10,18 @@ enum Game_State {
     Game_State_End_Editing,
     Game_State_Won,
     Game_State_Lost,
-    
+
     Game_State_Count,
 };
 
 
-struct Game {  
+struct Game {
     // Systems
-    Renderer *renderer = nullptr;    
+    Renderer *renderer = nullptr;
     Audio audio;
     Resources resources;
     Log log;
-    
+
     Level current_level;
     Level_Editor editor;
 
@@ -29,6 +29,9 @@ struct Game {
 
     Array_Of_Moves  all_the_moves;
     Array_Of_Levels all_the_levels;
+
+    u32_darray level_set;
+    u32 current_level_index = 0;
 
     Game_State state  = Game_State_Playing;
     u32 render_mode   = Level_Render_Mode_All;
@@ -40,11 +43,11 @@ struct Game {
 
 b32 init_game(Game *game) {
     b32 result = true;
-    
+
     //
     // Load resources
     {
-        log_str(&game->log, "loading resources...");       
+        log_str(&game->log, "loading resources...");
         result = init_resources(&game->resources);
         if (!result) {
             LOG_ERROR(&game->log, "failed to load resources, is the data directory present?", 0);
@@ -52,8 +55,8 @@ b32 init_game(Game *game) {
         else {
             log_str(&game->log, "resources loaded");
         }
-        
-        
+
+
         // NOTE: Create a voice using a (somewhat) random wav file. If playing a wav with a different
         //       format (different bit rate, etc...) the voice will be destroyed and re-created.
         //       So this will not create any requirements of the wav formats.
@@ -76,7 +79,7 @@ b32 init_game(Game *game) {
         }
     }
 
-    
+
     //
     // Init game state
     if (result) {
@@ -92,7 +95,7 @@ b32 init_game(Game *game) {
             LOG_ERROR_STR(&game->log, "failed to load level", 0);
         }
     }
-    
+
     u32 level_load_count = load_levels_from_disc(&game->all_the_levels, &game->resources);
     if (level_load_count > 0) {
         log_u32(&game->log, "Loaded levels", level_load_count);
@@ -101,11 +104,21 @@ b32 init_game(Game *game) {
         LOG_ERROR_STR(&game->log, "failed to load the levels", 0);
     }
 
+    //
+    // Load default level set
+    {
+        result = read_level_set_from_disc(&game->level_set, "main.level_set");
+        if (!result) {
+            LOG_ERROR_STR(&game->log, "failed to load the level set", 0);
+        }
+    }
+
     return result;
 }
 
 
 void fini_game(Game *game) {
+    free_darray(&game->level_set);
     fini_editor(&game->editor);
     free_array_of_levels(&game->all_the_levels);
     fini_level(&game->current_level);
@@ -120,17 +133,33 @@ void fini_game(Game *game) {
 // Change game state
 //
 
-void change_to_next_level(Game *game) {    
+void change_to_next_level(Game *game) {
+    game->current_level_index = (game->current_level_index + 1) < game->level_set.count ? (game->current_level_index + 1) : 0;
+    u32 next_level_id = game->level_set[game->current_level_index];
+    Level *next_level = get_level_with_id(&game->all_the_levels, next_level_id);
+    if (next_level) {
+        init_level_as_copy_of_level(&game->current_level, next_level, &next_level->original_state);
+        reset_level(&game->current_level);
+        create_maps_off_level(&game->current_level);
+    }
 }
 
 
 void change_to_prev_level(Game *game) {
+    game->current_level_index = game->current_level_index > 0 ? (game->current_level_index - 1) : game->level_set.count - 1;
+    u32 prev_level_id = game->level_set[game->current_level_index];
+    Level *prev_level = get_level_with_id(&game->all_the_levels, prev_level_id);
+    if (prev_level) {
+        init_level_as_copy_of_level(&game->current_level, prev_level, &prev_level->original_state);
+        reset_level(&game->current_level);
+        create_maps_off_level(&game->current_level);
+    }
 }
 
 
 void victory(Game *game) {
     game->state = Game_State_Won;
-    game->input = Input_None;    
+    game->input = Input_None;
 }
 
 
@@ -147,7 +176,7 @@ void reset(Game *game) {
 }
 
 
-void undo(Game *game) {    
+void undo(Game *game) {
     game->state = Game_State_Playing;
     undo_one_level_state(&game->current_level);
     create_maps_off_level(&game->current_level);
@@ -163,8 +192,7 @@ void redo(Game *game) {
 
 
 
-//
-// #_Draw level
+//// #_Draw level
 //
 
 void draw_level(Game *game) {
@@ -175,14 +203,14 @@ void draw_level(Game *game) {
 
     //
     // Draw level
-    draw_level(renderer, level, game->render_mode, game->microseconds_since_start);    
+    draw_level(renderer, level, game->render_mode, game->microseconds_since_start);
 
 
     //
     // Draw maps
     draw_maps(renderer, level, level->maps, level->current_map_index);
 
-    
+
     //
     // Draw win/defeat if relevant
     if (game->state == Game_State_Won) {
@@ -204,12 +232,13 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
     Level *level = &game->current_level;
     game->renderer->clear(v4u8_black);
 
-    
+
     //
-    // Play the game    
+    // Play the game
     if (game->state == Game_State_Won) {
         if (game->input == Input_Select) {
-            reset(game);
+            change_to_next_level(game);
+            game->state = Game_State_Playing;
         }
     }
     else if (game->state == Game_State_Lost) {
@@ -219,7 +248,7 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
     }
     else if (game->state == Game_State_Playing) {
         Level_State *level_state = level->current_state;
-            
+
         //
         // Check for win-/loose-conditions
         if (level_state->pacman_count == 0) {
@@ -229,25 +258,25 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
         else if (level_state->ghost_count == 0) {
             defeat(game);
             play_wav(&game->audio, &game->resources.wavs.lost);
-        }            
+        }
         else if (game->input < Input_Select) {
             #ifdef DEBUG
             debug_check_all_actors(level);
             #endif
-                
+
             collect_all_moves(level->maps, &game->all_the_moves, &game->input, level);
             u32 valid_moves = resolve_all_moves(&game->all_the_moves, level);
-                
+
             #ifdef DEBUG
             debug_check_all_move_sets(&game->all_the_moves);
             debug_check_all_actors(level);
             #endif
-        
+
             if (valid_moves == 0) {
                 cancel_moves(&game->all_the_moves, level);
                 play_wav(&game->audio, &game->resources.wavs.nope); // No valid moves at all, we won't move until we have at least one valid!
             }
-            else {                
+            else {
                 // We're moving and thus we need to save the state and recalulate the "dijkstra maps".
                 save_current_level_state(level);
                 level_state = level->current_state;
@@ -255,23 +284,23 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
                 debug_check_all_actors(level);
                 accept_moves(&game->all_the_moves, &game->audio, &game->resources.wavs, level);
                 debug_check_all_actors(level);
-                
-                // Update mode counter                    
+
+                // Update mode counter
                 if (level_state->mode_duration > 0) {
-                    --level_state->mode_duration;        
+                    --level_state->mode_duration;
                     if (level_state->mode_duration == 0) {
                         change_pacman_mode(level, Actor_Mode_Prey);
                     }
-                }                
-        
+                }
+
                 // Update "dijkstra-maps"
                 create_maps_off_level(level);
             }
-            
-            clear_array_of_moves(&game->all_the_moves);            
+
+            clear_array_of_moves(&game->all_the_moves);
         }
     }
-    
+
 
     if (game->state == Game_State_Begin_Editing) {
         begin_editing(&game->editor, level, static_cast<Level_Render_Mode>(game->render_mode));
@@ -287,8 +316,8 @@ void update_and_render(Game *game, f32 dt, b32 *should_quit) {
     else {
         draw_level(game);
     }
-    
-    
+
+
     //
     // NOTE: For now we'll assume that we always are able to keep the framerate.
     // TODO: Handle framerate deviations!

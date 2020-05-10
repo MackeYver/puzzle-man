@@ -91,7 +91,7 @@ b32 win32_read_entire_file(char const *path_and_name, u8 **data, u32 *size) {
     // NOTE: It seems like mbstowcs_s includes the null termintor in the count of converted chars?
     mbstowcs_s(&converted, text_buffer, sizeof(text_buffer) / sizeof(wchar_t), path_and_name, length);
     assert(converted == length);
-    
+
     HANDLE file = CreateFile(text_buffer, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
         u32 error = GetLastError();
@@ -111,14 +111,14 @@ b32 win32_read_entire_file(char const *path_and_name, u8 **data, u32 *size) {
         // DEBUG
         assert(result && *data && bytes_read == *size);
         CloseHandle(file);
-    }    
+    }
 
     return result;
 }
 
 b32  win32_open_file_for_writing(char const *path_and_name, HANDLE *handle) {
     b32 result = true;
-    
+
     size_t length = strlen(path_and_name) + 1;
     assert(length < MAX_PATH);
     wchar_t text_buffer[MAX_PATH];
@@ -126,7 +126,7 @@ b32  win32_open_file_for_writing(char const *path_and_name, HANDLE *handle) {
     // NOTE: It seems like mbstowcs_s includes the null termintor in the count of converted chars?
     mbstowcs_s(&converted, text_buffer, sizeof(text_buffer) / sizeof(wchar_t), path_and_name, length);
     assert(converted == length);
-    
+
     *handle = CreateFile(text_buffer, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (*handle == INVALID_HANDLE_VALUE) {
         u32 error = GetLastError();
@@ -147,7 +147,7 @@ HANDLE win32_open_file_for_reading(char const *path_and_name) {
     // NOTE: It seems like mbstowcs_s includes the null termintor in the count of converted chars?
     mbstowcs_s(&converted, text_buffer, sizeof(text_buffer) / sizeof(wchar_t), path_and_name, length);
     assert(converted == length);
-    
+
     HANDLE file = CreateFile(text_buffer, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
         u32 error = GetLastError();
@@ -194,7 +194,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
             Game *game = reinterpret_cast<Game *>(create_struct->lpCreateParams);
             SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)game);
         } break;
-            
+
         case WM_DESTROY: {
             PostQuitMessage(0);
             return 0;
@@ -203,10 +203,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
         // case WM_MOUSEMOVE: {
         // } break;
 
-        // case WM_SIZE: {            
+        // case WM_SIZE: {
         // } break;
 
-        // case WM_PAINT: {            
+        // case WM_PAINT: {
         // } break;
 
         case WM_KEYDOWN: {
@@ -251,14 +251,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                     else if (w_param >= 0x41 && w_param <= 0x5a) { // Letters
                         char c = static_cast<char>(w_param);
                         c = lower_case ? c + 32 : c;
-                        char_to_add = c; 
+                        char_to_add = c;
                     }
                     add_char_at_cursor(keyboard, char_to_add);
                 }
             }
-            else {            
+            else {
                 if (w_param == VK_RIGHT) {
-                    game->input = Input_Right;                
+                    game->input = Input_Right;
                 }
                 else if (w_param == VK_UP) {
                     game->input = Input_Up;
@@ -328,7 +328,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                         render_mode = &game->render_mode;
                     }
                     *render_mode |= Level_Render_Mode_All;
-                }            
+                }
                 else if (w_param == 0x49) { // I
                     u32 *render_mode = nullptr;
                     if (game->state == Game_State_Editing) {
@@ -371,7 +371,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                 else if (w_param == VK_F6) {
                     // Load
                     //read_player_profiles_from_disc(game->player_profiles);
-                }                
+                }
                 else if (game->state == Game_State_Lost && w_param == VK_RETURN) {
                     if (game->state != Game_State_Editing) {
                         reset(game);
@@ -381,8 +381,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param)
                     if (game->state != Game_State_Editing) {
                         change_to_next_level(game);
                     }
-                }            
-                else if (w_param == VK_F1) { // DEBUG                
+                }
+                else if (w_param == VK_F1) { // DEBUG
                     if (game->state != Game_State_Editing) {
                         change_to_prev_level(game);
                     }
@@ -424,11 +424,11 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 {
     Game game;
     open_log(&game.log);
-    
+
     wchar_t const *class_name = L"puzzle-man";
     u32 error_code = 0;
 
-    
+
     //
     // Allocate a console and direct the standard output to it
 #ifdef DEBUG
@@ -448,13 +448,13 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 
 
     log_str(&game.log, "Starting initializations...");
-    
-   
+
+
     //
     // Window class
     RECT client_rect = {0, 0, kWindow_Client_Area_Width, kWindow_Client_Area_Height};
-    HWND hwnd = nullptr;    
-    {        
+    HWND hwnd = nullptr;
+    {
         WNDCLASSEX window_class;
         ZeroMemory(&window_class, sizeof(WNDCLASSEX));
         window_class.cbSize = sizeof(WNDCLASSEX);
@@ -464,22 +464,22 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
         window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
         window_class.hbrBackground = CreateSolidBrush(RGB(0, 0, 0));
         window_class.lpszClassName = class_name;
-    
+
         u32 result = RegisterClassEx(&window_class);
         if (result == 0) {
             u32 error = GetLastError();
             LOG_ERROR(&game.log, "failed to register WNDCLASSEX", error);
             error_code = 1;
         }
-        
+
         //
         // Create window
         if (error_code == 0) {
             DWORD window_style = WS_CAPTION | WS_SYSMENU | WS_SIZEBOX;
             AdjustWindowRectEx(&client_rect, window_style, false, 0);
             game.window_width = client_rect.right - client_rect.left;
-            game.window_height = client_rect.bottom - client_rect.top;            
-        
+            game.window_height = client_rect.bottom - client_rect.top;
+
             hwnd = CreateWindowEx(0,
                                   class_name,
                                   class_name,
@@ -507,20 +507,20 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
     }
 
 
-    
+
     //
     // Init renderer and audio
     if (error_code == 0)
     {
         game.renderer = new Renderer_Software_win32();
         b32 result = static_cast<Renderer_Software_win32 *>(game.renderer)->init_win32(hwnd, &game.log, kWindow_Client_Area_Width, kWindow_Client_Area_Height);
-        if (!result) {            
+        if (!result) {
             LOG_ERROR(&game.log, "failed to initialize the software renderer", result);
             error_code = 3;
         }
         else {
             log_str(&game.log, "Renderer initialized");
-             
+
             result = init_audio(&game.audio, &game.log);
             if (!result) {
                 LOG_ERROR(&game.log, "failed to initialize the audio system", result);
@@ -531,23 +531,23 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             }
         }
     }
-    
 
-    
+
+
     //
     // Init game
     if (error_code == 0)
-    {        
+    {
         if (init_game(&game)) {
             log_str(&game.log, "Game initilized");
         }
-        else {            
+        else {
             LOG_ERROR(&game.log, "failed to initialized game", 0);
             error_code = 5;
         }
     }
-    
-    
+
+
     //
     // Main loop
     LARGE_INTEGER frequency;
@@ -566,7 +566,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 
 
         //
-        // Message pump        
+        // Message pump
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -588,8 +588,8 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             mouse->right_button.curr   = Input_Mouse_Button_Up;
             mouse->right_button.prev   = Input_Mouse_Button_Up;
         }
-        
-        if (game.state == Game_State_Editing || game.state == Game_State_Begin_Editing) {            
+
+        if (game.state == Game_State_Editing || game.state == Game_State_Begin_Editing) {
             POINT Pm;
             GetCursorPos(&Pm);
             ScreenToClient(hwnd, &Pm);
@@ -597,7 +597,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 
             Level_Editor *editor = &game.editor;
             Input_Mouse *mouse = &editor->input.mouse;
-            
+
             if (PtInRect(&client_rect, Pm)) {
                 mouse->position = V2(static_cast<f32>(Pm.x), static_cast<f32>(client_rect.bottom - Pm.y));
                 mouse->is_inside = true;
@@ -657,7 +657,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             elapsed_time.QuadPart *= 1000000;
             elapsed_time.QuadPart /= frequency.QuadPart;
         }
-        
+
 
 #ifdef kPrintFPS
         ++frame_counter;
@@ -668,13 +668,13 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
             accumulated_frame_time = 0;
         }
 #endif
-    }   
+    }
 
-    
+
     //
     // Quit the program
-    fini_game(&game);    
-    fini_audio(&game.audio);    
+    fini_game(&game);
+    fini_audio(&game.audio);
     delete game.renderer;
 
 #ifdef DEBUG
@@ -687,6 +687,6 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE PrevInstance, PWSTR CmdLine, i
 #endif
 
     close_log(&game.log);
-   
+
     return error_code;
 }
