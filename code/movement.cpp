@@ -46,7 +46,7 @@ struct Array_Of_Moves {
 void init_move(Move *move) {
     if (move) {
         move->actor_id = kActor_ID_Null;
-        move->src = v2u_00;        
+        move->src = v2u_00;
     }
 }
 
@@ -83,13 +83,13 @@ void init_array_of_moves(Array_Of_Moves *array) {
     array->count = 0;
 
     size_t size = sizeof(Move_Set) * array->capacity;
-    array->data = static_cast<Move_Set *>(malloc(size));    
+    array->data = static_cast<Move_Set *>(malloc(size));
 }
 
 
 b32 grow_array_of_moves(Array_Of_Moves *moves) {
     b32 result = false;
-    
+
     if (moves) {
         u32 new_capacity = moves->capacity < 10 ? 10 : 2 * moves->capacity;
         size_t new_size = sizeof(Move_Set) * new_capacity;
@@ -108,7 +108,7 @@ b32 grow_array_of_moves(Array_Of_Moves *moves) {
 
     return result;
 }
- 
+
 
 void clear_array_of_moves(Array_Of_Moves *moves) {
     if (moves) {
@@ -138,7 +138,7 @@ static void debug_check_all_actors(Level *level) {
             int a = 0;
             ++a;
         }
-        
+
         for (u32 inner_index = 0; inner_index < array->count; ++inner_index) {
             if (outer_index == inner_index)  continue;
 
@@ -173,7 +173,7 @@ b32 add_move(Array_Of_Moves *array, Actor *actor, v2u dst, Level *level) {
 
     if (array && actor) {
         b32 got_memory = true;
-        
+
         if (array->count == array->capacity) {
             got_memory = grow_array_of_moves(array);
         }
@@ -191,17 +191,17 @@ b32 add_move(Array_Of_Moves *array, Actor *actor, v2u dst, Level *level) {
             else {
                 assert(set->move_count < 4);
                 move = &set->moves[set->move_count++];
-            }            
+            }
             assert(move);
             assert(move->actor_id.index == 0xFFFF);
             assert(move->actor_id.salt == 0xFFFF);
 
             if (actor->mode == Actor_Mode_Predator) {
                 ++set->predator_count;
-            }   
+            }
 
             move->actor_id = actor->id;
-            move->src = actor->position;         
+            move->src = actor->position;
             result = true;
         }
     }
@@ -216,7 +216,7 @@ v2s get_movement_vector(Actor *actor, Input input) {
 
     s32 dx = X[input];
     s32 dy = Y[input];
-    
+
     if (actor->type == Actor_Type_Ghost_Pink) {
         dx *= -1;
         dy *= -1;
@@ -236,7 +236,7 @@ v2s get_movement_vector(Actor *actor, Input input) {
 }
 
 
-void collect_move(Array_Of_Moves *all_the_moves, Level *level, Actor *actor, v2s dP) {       
+void collect_move(Array_Of_Moves *all_the_moves, Level *level, Actor *actor, v2s dP) {
     if (move_is_possible(level, actor, dP)) {
         v2u dst = V2u(static_cast<u32>(static_cast<s32>(actor->position.x) + dP.x),
                       static_cast<u32>(static_cast<s32>(actor->position.y) + dP.y));
@@ -261,7 +261,7 @@ v2s get_pacman_move(s32 **maps, Level *level, Actor *pacman) {
     assert(closest_ghost.distance >= 0);
 
     Level_State *state = level->current_state;
-    
+
     if (pacman->mode == Actor_Mode_Predator && state->mode_duration >= static_cast<u32>(closest_ghost.distance)) {
         next_direction = closest_ghost.direction;
     }
@@ -269,7 +269,7 @@ v2s get_pacman_move(s32 **maps, Level *level, Actor *pacman) {
         if (state->large_dot_count > 0) {
             Map_Direction closest_large_dot = get_shortest_direction_on_map(level, maps[Map_Dot_Large], pacman);
             assert(closest_large_dot.direction < Direction_Count);
-    
+
             if (closest_ghost.distance < closest_large_dot.distance) {
                 Map_Direction flee = get_shortest_direction_on_map(level, maps[Map_Flee_Ghosts], pacman);
                 next_direction = flee.direction;
@@ -305,7 +305,7 @@ void collect_all_moves(s32 **maps, Array_Of_Moves *all_the_moves, Input *input, 
             }
             else {
                 dP = get_movement_vector(actor, *input);
-            }            
+            }
             collect_move(all_the_moves, level, actor, dP);
         }
     }
@@ -332,19 +332,19 @@ void cancel_moves(Array_Of_Moves *all_the_moves, Level *level) {
 
 u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
     u32 valid_moves = 0;
-        
+
     //
     // Solve all collisions with actor (if any) standing on the destination tile
     Level_State *state = level->current_state;
     u32 resolved_collisions;
-    
-    do {        
+
+    do {
         resolved_collisions = 0;
-        
+
         for (u32 set_index = 0; set_index < all_the_moves->count; ++set_index) {
             Move_Set *set = &all_the_moves->data[set_index];
             if (set->cancelled)  continue;
-            
+
             Tile *dst_tile = get_tile_at(level, set->dst);
             Actor *dst_actor = get_actor(&state->actors, dst_tile->actor_id);
 
@@ -368,16 +368,16 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
                     if (dst_actor && actor_is_alive(dst_actor) && !actor_will_die(dst_actor)) {
                         immobile = dst_actor->pending_state == Actor_State_Idle;
                         collision = immobile || ((dst_actor->pending_state == Actor_State_Moving) && (dst_actor->next_position == src_actor->position));
-                    }                
+                    }
 
                     // NOTE:
                     // src_actor will stop if there is a collision and src is not a predator and
-                    // dst is not a prey 
+                    // dst is not a prey
                     //
                     // or in other words: we only allow src to move if:
                     // - there is no collision (either if dst is moving away or if dst == nullptr)
                     // - in event of a collision src may move if it is a predator and dst is a prey
-            
+
                     if (collision) {
                         if (src_actor->mode == Actor_Mode_Predator && dst_actor->mode == Actor_Mode_Prey) {
                             dst_actor->pending_state = Actor_State_At_Deaths_Door;
@@ -398,15 +398,15 @@ u32 resolve_all_moves(Array_Of_Moves *all_the_moves, Level *level) {
 
 
     //
-    // Solve moves            
-    for (u32 set_index = 0; set_index < all_the_moves->count; ++set_index) {        
+    // Solve moves
+    for (u32 set_index = 0; set_index < all_the_moves->count; ++set_index) {
         Move_Set *set = &all_the_moves->data[set_index];
         if (set->cancelled)  continue;
         if (set->move_count == 0)  continue;
-        
+
         Tile *dst_tile = get_tile_at(level, set->dst);
         Actor *dst_actor = get_actor(&state->actors, dst_tile->actor_id);
-        if (!actor_is_alive(dst_actor)) {                        
+        if (!actor_is_alive(dst_actor)) {
             dst_actor = nullptr;
         }
 
@@ -470,27 +470,27 @@ Direction get_direction_from_move(v2u from, v2u to) {
 
 void accept_moves(Array_Of_Moves *all_the_moves, Audio *audio, Wavs *wavs, Level *level) {
     Level_State *state = level->current_state;
-    
+
     for (u32 move_set_index = 0; move_set_index < all_the_moves->count; ++move_set_index) {
         Move_Set *set = &all_the_moves->data[move_set_index];
         if (set->cancelled)  continue;
-        
+
         for (u32 move_index = 0; move_index < set->move_count; ++move_index) {
             Move *move = &set->moves[move_index];
             Actor *actor = get_actor(&state->actors, move->actor_id);
-            Tile *dst_tile = get_tile_at(level, set->dst);            
-            
+            Tile *dst_tile = get_tile_at(level, set->dst);
+
             if (actor->pending_state == Actor_State_Moving) {
-                Tile *src_tile = get_tile_at(level, actor->position);                
+                Tile *src_tile = get_tile_at(level, actor->position);
                 assert(src_tile);
                 if (src_tile->actor_id == actor->id)  src_tile->actor_id = kActor_ID_Null;
                 dst_tile->actor_id = actor->id;
-                
+
                 actor->state = Actor_State_Idle;
                 actor->pending_state = Actor_State_Idle;
                 actor->direction = get_direction_from_move(actor->position, actor->next_position);
                 actor->position = actor->next_position;
-                
+
 
                 // Is the current actor pacman, and has the current tile any dots on it?
                 if (actor->type == Actor_Type_Pacman) {
@@ -519,7 +519,7 @@ void accept_moves(Array_Of_Moves *all_the_moves, Audio *audio, Wavs *wavs, Level
         }
     }
 
-    
+
     //
     // Iterate through all actors and kill the ones with the state At_Deaths_Door.
     // We migh have an actor that never were part of a move but should be killed.

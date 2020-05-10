@@ -656,295 +656,6 @@ static void draw_level_lost_text(Renderer *renderer, Font *font) {
 // Loading
 //
 
-//
-// Lexer, lexing levels
-enum Level_Token {
-    // NOTE: Everything below this line and until the actors will be static data
-    Level_Token_Unused_Cell,
-    Level_Token_Wall, 
-    Level_Token_Floor,       
-    
-    Level_Token_Dot_Small,
-    Level_Token_Dot_Large,
-
-    Level_Token_Actors,
-    // NOTE: Everything below this line will be actors
-    Level_Token_Ghost_Red,
-    Level_Token_Ghost_Pink,
-    Level_Token_Ghost_Cyan,
-    Level_Token_Ghost_Orange, 
-    Level_Token_Pacman,
-
-    Level_Token_Count,
-    Level_Token_Unknown,
-};
-
-
-Level_Token get_level_token_from_char(char c) {
-    Level_Token result = Level_Token_Unknown;
-    
-    switch (c) {
-        case 'w': { result = Level_Token_Wall;         } break;
-        case '.': { result = Level_Token_Floor;        } break;
-            
-        case '+': { result = Level_Token_Dot_Small;    } break;
-        case 'X': { result = Level_Token_Dot_Large;    } break;
-            
-        case '1': { result = Level_Token_Ghost_Red;    } break;
-        case '2': { result = Level_Token_Ghost_Pink;   } break;
-        case '3': { result = Level_Token_Ghost_Cyan;   } break;
-        case '4': { result = Level_Token_Ghost_Orange; } break;
-        case 'P': { result = Level_Token_Pacman;       } break;
-            
-        case '-': { result = Level_Token_Unused_Cell;  } break;
-
-        default:  { result = Level_Token_Unknown;      } break;
-    }
-    
-    return result;
-}
-
-
-b32 token_is_static_level_data(Level_Token token) {
-    b32 result = (token < Level_Token_Actors);
-    return result;
-}
-
-
-b32 token_is_an_actor(Level_Token token) {
-    b32 result = (token > Level_Token_Actors && token < Level_Token_Count);
-    return result;
-}
-
-
-Actor_Type get_actor_type_from_level_token(Level_Token token) {
-    Actor_Type actor_type = Actor_Type_Unknown;
-    
-    switch (token) {        
-        case Level_Token_Ghost_Red:    { actor_type = Actor_Type_Ghost_Red;    } break;
-        case Level_Token_Ghost_Pink:   { actor_type = Actor_Type_Ghost_Pink;   } break;
-        case Level_Token_Ghost_Cyan:   { actor_type = Actor_Type_Ghost_Cyan;   } break;
-        case Level_Token_Ghost_Orange: { actor_type = Actor_Type_Ghost_Orange; } break;
-        case Level_Token_Pacman:       { actor_type = Actor_Type_Pacman;       } break;
-    }
-
-    return actor_type;
-}
-
-
-b32 parse_level_header(Tokenizer *tokenizer, Level *level) {
-    assert(tokenizer);
-    assert(level);
-    
-    eat_spaces_and_newline(tokenizer);
-    Token token;
-
-    //
-    // read the name of the level    
-    require_identifier_with_exact_name(tokenizer, &token, "name");
-    require_token(tokenizer, &token, Token_colon);
-    require_token(tokenizer, &token, Token_string);
-    _snprintf_s(level->name, kLevel_Name_Max_Length, _TRUNCATE, "%s", token.data);
-    require_token(tokenizer, &token, Token_comma);
-
-
-    //
-    // width
-    require_identifier_with_exact_name(tokenizer, &token, "width");
-    require_token(tokenizer, &token, Token_colon);
-    require_token(tokenizer, &token, Token_number);
-    level->width = get_u32_from_token(&token);
-    require_token(tokenizer, &token, Token_comma);
-
-    //
-    // height
-    require_identifier_with_exact_name(tokenizer, &token, "height");
-    require_token(tokenizer, &token, Token_colon);
-    require_token(tokenizer, &token, Token_number);
-    level->height = get_u32_from_token(&token);
-
-    require_token(tokenizer, &token, Token_curled_brace_start);
-    eat_spaces_and_newline(tokenizer);
-
-    if (tokenizer->error && !is_eof(tokenizer)) {        
-        return false;
-    }
-    else {
-        return true;
-    }
-}
-
-b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, u32 x, u32 y, Actor_Type actor_type, b32 reverse_y = true) {
-    assert(actor_type < Actor_Type_Count);    
-
-    if (actor_type >= Actor_Type_Count) {
-        printf("%s() got an invalid actor type (%u)\n", __FUNCTION__, actor_type);
-        return false;
-    }
-
-    u32 final_y = y;
-    if (reverse_y)  final_y = level->height - 1 - y;
-    
-    Actor *curr_actor = new_actor(&state->actors);
-    assert(curr_actor);
-    curr_actor->position = V2u(x, final_y);
-    curr_actor->type = actor_type;
-    curr_actor->state = Actor_State_Idle;
-    curr_actor->direction = Direction_Right;
-        
-    //
-    // Ghost
-    if (actor_type < Actor_Type_Pacman) {
-        curr_actor->mode = Actor_Mode_Predator;
-        state->score += kGhost_Value;
-        ++state->ghost_count;
-    }
-
-    
-    //
-    // Pacman
-    else if (actor_type == Actor_Type_Pacman) {            
-        if (state->pacman_count == 0) {
-            curr_actor->mode = Actor_Mode_Prey;
-            level->pacman_id = curr_actor->id;
-            ++state->pacman_count;
-        }
-        else {
-            if (tokenizer) {
-                tokenizer->error = true;
-                _snprintf_s(tokenizer->error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found more than one pacman",
-                            tokenizer->path_and_name, tokenizer->line_number, tokenizer->line_position);
-            }
-            return false;
-        }
-    }
-
-        
-    //
-    // Tile beneath the actor
-    u32 curr_tile_index = (level->width * final_y) + x;
-    Tile *curr_tile = &state->tiles[curr_tile_index];
-    curr_tile->type = Tile_Type_Floor;
-    curr_tile->item.type = Item_Type_None;
-    curr_tile->actor_id = curr_actor->id;
-
-    return true;
-}
-
-
-b32 parse_level(Tokenizer *tokenizer, Level *level, Level_State *state) {
-    b32 result = parse_level_header(tokenizer, level);    
-    if (result) {
-        state->tile_count = level->width * level->height;
-        state->tiles = static_cast<Tile *>(calloc(state->tile_count, sizeof(Tile)));
-        assert(state->tiles);
-
-        u32 x = 0;
-        u32 y = 0;
-
-        //
-        // NOTE: the level is read top-down from the text file but we want to have
-        //       it in bottom up,otherwise the level will be rendered upside-down.
-        //
-        b32 should_loop = true;
-        while (y < level->height && should_loop) {
-            u32 tile_index = (level->width * (level->height - 1 - y)) + x;
-            Tile *curr_tile = &state->tiles[tile_index];
-            b32 should_advance = true;
-
-            
-            //
-            // Process token
-            Level_Token level_token = get_level_token_from_char(tokenizer->curr_char);
-            switch (level_token) {
-                case Level_Token_Unused_Cell: {
-                    curr_tile->type = Tile_Type_None;
-                    curr_tile->item.type = Item_Type_None;
-                    curr_tile->item.value = 0;
-                    curr_tile->actor_id = kActor_ID_Null;
-                } break;
-                    
-                case Level_Token_Wall: {
-                    curr_tile->type = Tile_Type_Wall_0;
-                    curr_tile->item.type = Item_Type_None;
-                    curr_tile->item.value = 0;
-                    curr_tile->actor_id = kActor_ID_Null;
-                } break;
-                    
-                case Level_Token_Floor: {
-                    curr_tile->type = Tile_Type_Floor;
-                    curr_tile->item.type = Item_Type_None;
-                    curr_tile->item.value = 0;
-                    curr_tile->actor_id = kActor_ID_Null;
-                } break;
-                    
-                case Level_Token_Dot_Small: {
-                    curr_tile->type = Tile_Type_Floor;
-                    state->score += kDot_Small_Value;
-                    ++state->small_dot_count;
-                    curr_tile->item.type = Item_Type_Dot_Small;
-                    curr_tile->item.value = kDot_Small_Value;
-                    curr_tile->actor_id = kActor_ID_Null;
-                } break;
-                    
-                case Level_Token_Dot_Large: {
-                    curr_tile->type = Tile_Type_Floor;
-                    state->score += kDot_Large_Value;
-                    ++state->large_dot_count;
-                    curr_tile->item.type = Item_Type_Dot_Large;
-                    curr_tile->item.value = kDot_Large_Value;
-                    curr_tile->actor_id = kActor_ID_Null;
-                } break;
-                    
-                //
-                // NOTE: Beneath every actor there is a floor, holding them up.
-                case Level_Token_Ghost_Red:    { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Red))     should_loop = false; } break;
-                case Level_Token_Ghost_Pink:   { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Pink))    should_loop = false; } break;
-                case Level_Token_Ghost_Cyan:   { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Cyan))    should_loop = false; } break;
-                case Level_Token_Ghost_Orange: { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Ghost_Orange))  should_loop = false; } break;
-                case Level_Token_Pacman:       { if (!add_actor(tokenizer, level, state, x, y, Actor_Type_Pacman))        should_loop = false; } break;
-
-                default: {                    
-                    Token token = get_token(tokenizer);
-                    if (token.type == Token_comment) {
-                        skip_to_next_line(tokenizer);
-                        should_advance = false;
-                    }
-                    else {
-                        tokenizer->error = true;
-                        _snprintf_s(tokenizer->error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token",
-                                  tokenizer->path_and_name, token.line_number, token.line_position);
-                        should_loop = false;
-                    }
-                } break;
-            }
-            
-            if (should_advance) {
-                advance(tokenizer);
-                ++x;
-                if (x == level->width) {
-                    ++y;
-                    x = 0;
-                }                
-            }
-
-            eat_spaces_and_newline(tokenizer);
-            reload(tokenizer);
-        }
-
-        Token token;
-        require_token(tokenizer, &token, Token_curled_brace_end);
-        eat_spaces_and_newline(tokenizer);
-
-        if (tokenizer->error && !is_eof(tokenizer)) {
-            printf("%s(): %s\n", __FUNCTION__, tokenizer->error_string);
-            result = false;            
-        }
-    }
-
-    return result;
-}
-
 void adjust_walls_in_level(Level *level, Level_State *state) {
     for (u32 y = 0; y < level->height; ++y) {
         for (u32 x = 0; x < level->width; ++x) {
@@ -984,28 +695,434 @@ void adjust_walls_in_level(Level *level, Level_State *state) {
 }
 
 
-b32 load_level_from_disc(Level *level, Resources *resources, char const *filename) {
-    fini_level(level);
-    init_level(level, resources);
+static char get_char_from_actor_type(Actor *actor) {
+    char result = '?';    
+
+    if (!actor) {
+        result = '.';
+    }
+    else {
+        switch (actor->type) {
+            case Actor_Type_Ghost_Red:    { result = '1'; } break;
+            case Actor_Type_Ghost_Pink:   { result = '2'; } break;
+            case Actor_Type_Ghost_Cyan:   { result = '3'; } break;
+            case Actor_Type_Ghost_Orange: { result = '4'; } break;
+            case Actor_Type_Pacman:       { result = 'P'; } break;
+            default:                      { result = '?'; } break;
+        }
+    }
+    
+    return result;
+}
+
+
+static Actor_Type get_actor_type_from_char(char c) {
+    Actor_Type result = Actor_Type_Unknown;
+
+    switch (c) {
+        case '1': { result = Actor_Type_Ghost_Red;    } break;
+        case '2': { result = Actor_Type_Ghost_Pink;   } break;
+        case '3': { result = Actor_Type_Ghost_Cyan;   } break;
+        case '4': { result = Actor_Type_Ghost_Orange; } break;
+        case 'P': { result = Actor_Type_Pacman;       } break;
+        default:  { result = Actor_Type_Unknown;      } break;
+    }
+
+    return result;
+}
+
+
+static char get_char_from_tile_type(Tile *tile) {
+    char result = '?';
+    
+    if (tile_has_wall(tile)) {
+        result = 'W';
+    }
+    else {
+        switch (tile->type) {
+            case Tile_Type_None:  { result = '.'; } break;
+            case Tile_Type_Floor: { result = '-'; } break;
+        }
+    }
+    
+    return result;
+}
+
+
+char get_char_from_item_type(Tile *tile) {
+    char result = '?';    
+    
+    switch (tile->item.type) {
+        case Item_Type_None:      { result = '.'; } break;
+        case Item_Type_Dot_Small: { result = '+'; } break;
+        case Item_Type_Dot_Large: { result = 'X'; } break;
+    }
+    
+    return result;
+}
+
+
+static b32 save_level(Level *level) {
+    b32 result = false;
+
+    u32 const buffer_size = 512;
+    char buffer[buffer_size];
+    _snprintf_s(buffer, buffer_size, _TRUNCATE, "data//levels//%u.level_txt", level->id);
+
+    HANDLE file_handle;
+    result = win32_open_file_for_writing(buffer, &file_handle);
+    if (result) {
+        DWORD bytes_written;
+        DWORD bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Name:\"%s\"\n", level->name);
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);
+
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "ID:%u\n", level->id);
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);
+
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Width:%u\n", level->width);
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);
+
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Height:%u\n", level->width);
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);
+
+        Level_State *state = level->current_state;
+
+        //
+        // Tiles        
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_tiles:\n");
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);        
+        
+        for (u32 y = 0; y < level->height; ++y) {
+            for (u32 x = 0; x < level->width; ++x) {
+                Tile *tile = get_tile_at(level, x, y);
+                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_tile_type(tile));
+                result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+                assert(bytes_to_write == bytes_written);
+            }
+            WriteFile(file_handle, "\n", 1, &bytes_written, nullptr);
+        }
+
+        //
+        // Items
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_items:\n");
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);
+        
+        for (u32 y = 0; y < level->height; ++y) {
+            for (u32 x = 0; x < level->width; ++x) {
+                Tile *tile = get_tile_at(level, x, y);
+                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_item_type(tile));
+                result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+                assert(bytes_to_write == bytes_written);
+            }
+            WriteFile(file_handle, "\n", 1, &bytes_written, nullptr);
+        }
+
+        //
+        // Actors
+        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_actors:\n");
+        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+        assert(bytes_to_write == bytes_written);
+        
+        for (u32 y = 0; y < level->height; ++y) {
+            for (u32 x = 0; x < level->width; ++x) {
+                Tile *tile = get_tile_at(level, x, y);
+                Actor *actor = get_actor(&state->actors, tile->actor_id);
+                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_actor_type(actor));
+                result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
+                assert(bytes_to_write == bytes_written);
+            }
+            WriteFile(file_handle, "\n", 1, &bytes_written, nullptr);
+        }
+        
+        CloseHandle(file_handle);
+    }
+
+    return result;
+}
+
+
+static b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, u32 x, u32 y, Actor_Type type) {
+    b32 result = false;    
+    
+    if (type < Actor_Type_Count ) {        
+        Actor *curr_actor = new_actor(&state->actors);
+        assert(curr_actor);
+
+        result = true;
+        curr_actor->position = V2u(x, y);
+        curr_actor->type = type;
+        curr_actor->state = Actor_State_Idle;
+        curr_actor->direction = Direction_Right;
+
+        Tile *curr_tile = get_tile_at(level, state, V2u(x, y));
+        assert(curr_tile);
+        curr_tile->actor_id = curr_actor->id;
+
+        
+        //
+        // Ghost
+        if (actor_type_is_ghost(type)) {
+            curr_actor->mode = Actor_Mode_Predator;
+            state->score += kGhost_Value;
+            ++state->ghost_count;
+        }
+
+    
+        //
+        // Pacman
+        else {
+            if (state->pacman_count == 0) {
+                curr_actor->mode = Actor_Mode_Prey;
+                level->pacman_id = curr_actor->id;
+                ++state->pacman_count;
+            }
+            else {
+                if (tokenizer) {
+                    tokenizer->error = true;
+                    _snprintf_s(tokenizer->error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found more than one pacman",
+                                tokenizer->path_and_name, tokenizer->line_number, tokenizer->line_position);
+                }
+                result = false;
+            }
+        }
+    }
+
+    return result;
+}
+
+
+static b32 load_level(Level *level, Resources *resources, char const *name) {
+    b32 result = false;    
 
     Tokenizer tokenizer;
-    b32 result = init_tokenizer(&tokenizer, "data\\levels\\", filename);    
+    result = init_tokenizer(&tokenizer, "data\\levels\\", name);
     if (result) {
-        result = parse_level(&tokenizer, level, &level->original_state);
-        if (!result) {
-            fini_level(level);
-        }
-        else {
-            adjust_walls_in_level(level, &level->original_state);
-        }
-    }    
-    fini_tokenizer(&tokenizer);
+        fini_level(level);
+        init_level(level, resources);
+    
+        eat_spaces_and_newline(&tokenizer);
+        Token token;
 
-    copy_level_state(&level->states[0], &level->original_state);
-    level->first_valid_state_index = 0;
-    level->last_valid_state_index = 0;
-    level->current_state_index = 0;
-    level->current_state = &level->states[0];
+        // Name of level
+        require_identifier_with_exact_name(&tokenizer, &token, "Name");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_string);
+        _snprintf_s(level->name, kLevel_Name_Max_Length, _TRUNCATE, "%s", token.data);
+
+        // Level id
+        require_identifier_with_exact_name(&tokenizer, &token, "ID");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_number);
+        level->id = get_u32_from_token(&token);
+
+        //
+        // Width
+        require_identifier_with_exact_name(&tokenizer, &token, "Width");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_number);
+        level->width = get_u32_from_token(&token);
+
+        //
+        // Height
+        require_identifier_with_exact_name(&tokenizer, &token, "Height");
+        require_token(&tokenizer, &token, Token_colon);
+        require_token(&tokenizer, &token, Token_number);
+        level->height = get_u32_from_token(&token);
+
+        
+        //
+        // Tiles
+        require_identifier_with_exact_name(&tokenizer, &token, "Layer_tiles");
+        require_token(&tokenizer, &token, Token_colon);
+        eat_spaces_and_newline(&tokenizer);
+        reload(&tokenizer);
+
+        Level_State *state = &level->original_state;
+        state->tile_count = level->width * level->height;
+        state->tiles = static_cast<Tile *>(calloc(state->tile_count, sizeof(Tile)));
+        assert(state->tiles);
+
+        b32 should_loop = !tokenizer.error;
+        b32 should_advance = true;
+        
+        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
+        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
+            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
+                Tile *tile = &state->tiles[(y * level->width) + x];
+
+                switch (tokenizer.curr_char) {
+                    case '.': {
+                        tile->type = Tile_Type_None;
+                    } break;
+
+                    case '-': {
+                        tile->type = Tile_Type_Floor;
+                    } break;
+                        
+                    case 'W': {
+                        tile->type = Tile_Type_Wall_0;
+                    } break;
+
+                    default: {                    
+                        token = get_token(&tokenizer);
+                        if (token.type == Token_comment) {
+                            skip_to_next_line(&tokenizer);
+                            should_advance = false;
+                        }
+                        else {
+                            tokenizer.error = true;
+                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the tile layer",
+                                        tokenizer.path_and_name, token.line_number, token.line_position);
+                            should_loop = false;
+                        }
+                    } break;
+                }
+
+                if (should_advance) {
+                    advance(&tokenizer);                
+                }
+                should_advance = true;
+
+                eat_spaces_and_newline(&tokenizer);
+                reload(&tokenizer);
+            }
+        }
+
+
+        //
+        // Items
+        require_identifier_with_exact_name(&tokenizer, &token, "Layer_items");
+        require_token(&tokenizer, &token, Token_colon);
+        eat_spaces_and_newline(&tokenizer);
+        reload(&tokenizer);
+        
+        should_loop = !tokenizer.error;
+        should_advance = true;
+        
+        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
+        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
+            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
+                Tile *tile = &state->tiles[(y * level->width) + x];
+
+                switch (tokenizer.curr_char) {
+                    case '.': {
+                        tile->item.type = Item_Type_None;
+                        tile->item.value = 0;
+                    } break;
+
+                    case '+': {
+                        tile->item.type = Item_Type_Dot_Small;
+                        tile->item.value = kDot_Small_Value;
+                        state->score += tile->item.value;
+                        ++state->small_dot_count;
+                    } break;
+
+                    case 'X': {
+                        tile->item.type = Item_Type_Dot_Large;
+                        tile->item.value = kDot_Large_Value;
+                        state->score += tile->item.value;
+                        ++state->large_dot_count;
+                    } break;
+                        
+                    default: {                    
+                        token = get_token(&tokenizer);
+                        if (token.type == Token_comment) {
+                            skip_to_next_line(&tokenizer);
+                            should_advance = false;
+                        }
+                        else {
+                            tokenizer.error = true;
+                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the items layer",
+                                        tokenizer.path_and_name, token.line_number, token.line_position);
+                            should_loop = false;
+                        }
+                    } break;
+                }
+
+                if (should_advance) {
+                    advance(&tokenizer);                
+                }
+                should_advance = true;
+
+                eat_spaces_and_newline(&tokenizer);
+                reload(&tokenizer);
+            }
+        }
+
+
+        //
+        // Actors
+        require_identifier_with_exact_name(&tokenizer, &token, "Layer_actors");
+        require_token(&tokenizer, &token, Token_colon);
+        eat_spaces_and_newline(&tokenizer);
+        reload(&tokenizer);
+        
+        should_loop = !tokenizer.error;
+        should_advance = true;
+        
+        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
+        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
+            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
+                Tile *tile = &state->tiles[(y * level->width) + x];
+
+                switch (tokenizer.curr_char) {
+                    case '.': {
+                        tile->actor_id = kActor_ID_Null;
+                    } break;
+                        
+                    case 'P':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4': {
+                        Actor_Type type = get_actor_type_from_char(tokenizer.curr_char);
+                        should_loop = add_actor(&tokenizer, level, state, x, y, type);
+                    } break;
+                        
+                    default: {                    
+                        token = get_token(&tokenizer);
+                        if (token.type == Token_comment) {
+                            skip_to_next_line(&tokenizer);
+                            should_advance = false;
+                        }
+                        else {
+                            tokenizer.error = true;
+                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the actor layer",
+                                        tokenizer.path_and_name, token.line_number, token.line_position);
+                            should_loop = false;
+                        }
+                    } break;
+                }
+
+                if (should_advance) {
+                    advance(&tokenizer);                
+                }
+                should_advance = true;
+
+                eat_spaces_and_newline(&tokenizer);
+                reload(&tokenizer);
+            }
+        }
+        
+
+
+        //
+        // Done
+        adjust_walls_in_level(level, &level->original_state);        
+        copy_level_state(&level->states[0], &level->original_state);
+        level->first_valid_state_index = 0;
+        level->last_valid_state_index = 0;
+        level->current_state_index = 0;
+        level->current_state = &level->states[0];
+
+        fini_tokenizer(&tokenizer);
+    }
 
     return result;
 }
@@ -1231,4 +1348,154 @@ static void draw_maps(Renderer *renderer, Level *level, s32 **maps, u32 map_inde
         renderer->print(font, V2u(renderer->get_backbuffer_width() - text_dim.x - char_width, 10), map_name_text);
 #endif
     }
+}
+
+
+
+
+//
+// A dynamic array of levels
+//
+
+struct Array_Of_Levels {
+    Level *data = nullptr;
+    u16 capacity = 0;
+    u16 count = 0;
+};
+
+
+static void free_array_of_levels(Array_Of_Levels *levels) {
+    if (levels) {
+        for (u32 index = 0; index < levels->capacity; ++index) {
+            Level *level = &levels->data[index];
+            fini_level(level);
+        }
+    }
+}
+
+
+static void init_array_of_levels(Array_Of_Levels *levels, u16 capacity = 10) {
+    if (levels) {
+        if (levels->data)  free_array_of_levels(levels);
+        levels->capacity = capacity;
+        levels->count = 0;
+        levels->data = static_cast<Level *>(calloc(levels->capacity, sizeof(Level)));        
+    }
+}
+
+
+b32 grow_array_of_levels(Array_Of_Levels *array) {
+    b32 result = false;
+    
+    if (array) {
+        u16 new_capacity = array->capacity == 0 ? 10 : 2 * array->capacity;
+        size_t new_size = sizeof(Level) * new_capacity;
+        void *new_ptr = realloc(array->data, new_size);
+        if (new_ptr) {
+            array->capacity = new_capacity;
+            array->data = static_cast<Level *>(new_ptr);
+            memset(array->data, 0, array->capacity * sizeof(Level));
+            result = true;
+        }
+        else {
+            printf("%s in %s failed to reallocate memory!\n", __FUNCTION__, __FILE__);
+        }
+    }
+
+    return result;
+}
+
+
+Level *get_next_empty_level(Array_Of_Levels *levels) {
+    Level *result = nullptr;
+
+    if (levels) {
+        if ((levels->capacity == 0) || (levels->count == (levels->capacity -1))) {
+            if (grow_array_of_levels(levels)) {
+                result = &levels->data[levels->count++];
+            }
+        }
+        else {
+            result = &levels->data[levels->count++];
+        }
+    }
+
+    return result;
+}
+
+
+static Level *get_level_with_id(Array_Of_Levels *levels, u32 level_id) {
+    Level *result = nullptr;
+    
+    if (levels) {
+        for (u32 index = 0; index < levels->capacity; ++index) {
+            Level *level = &levels->data[index];
+            if (level->id == level_id) {
+                result = level;
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
+
+static Level *get_level_with_exact_name(Array_Of_Levels *levels, char const *name) {
+    Level *result = nullptr;
+    
+    if (levels) {
+        for (u32 index = 0; index < levels->capacity; ++index) {
+            Level *level = &levels->data[index];
+            if (strcmp(level->name, name) == 0) {
+                result = level;
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
+
+static u32 load_levels_from_disc(Array_Of_Levels *levels, Resources *resources) {
+    u32 loaded_levels = 0;
+
+    if (levels) {
+        free_array_of_levels(levels);
+
+        WIN32_FIND_DATAA find_data;
+        HANDLE find_handle = FindFirstFileA("data\\levels\\*.level_txt", &find_data);
+        b32 load_result = true;
+        b32 find_result = true;
+
+        while ((load_result) && (find_result) && (find_handle != INVALID_HANDLE_VALUE)) {
+            Level *level = get_next_empty_level(levels);
+            if (level) {
+                load_result = load_level(level, resources, find_data.cFileName);
+                if (load_result)  ++loaded_levels;
+            }
+            find_result = FindNextFileA(find_handle, &find_data);
+        }
+
+        FindClose(find_handle);
+    }
+
+    return loaded_levels;
+}
+
+
+static b32 read_level_set_from_disc(Array_Of_Levels *levels, char const *level_set_name) {
+    b32 result = false;
+
+    if (levels && level_set_name) {
+        Tokenizer tokenizer;
+        result = init_tokenizer(&tokenizer, "data\\levels\\", level_set_name);
+        if (result) {
+        }
+
+        fini_tokenizer(&tokenizer);
+    }
+
+    return result;
 }

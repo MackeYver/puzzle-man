@@ -21,6 +21,7 @@ static void close_log(Log *log);
 static void log_error(Log *log, char const *string, u32 value, char const *file = nullptr, char const *function = nullptr, u32 line = 0);
 static void log_error_str(Log *log, char const *string, char const *error_string, char const *file = nullptr, char const *function = nullptr, u32 line = 0);
 static void log_str(Log *log, char const *string);
+static void log_u32(Log *log, char const *string, u32 value);
 static void log_current_time(Log *log);
 static void close_log(Log *log);
 
@@ -99,6 +100,22 @@ static void log_str(Log *log, char const *string) {
     if (log && string) {
         log_current_time(log);
         fprintf(log->file, "%s\n", string);
+    }
+
+    if (log->print_log || !log) {
+        printf("%s\n", string);
+    }
+
+    if (log->flush_immediately) {
+        fflush(log->file);
+    }
+}
+
+
+static void log_u32(Log *log, char const *string, u32 value) {
+    if (log && string) {
+        log_current_time(log);
+        fprintf(log->file, "%s: %u\n", string, value);
     }
 
     if (log->print_log || !log) {

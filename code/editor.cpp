@@ -396,10 +396,12 @@ static void end_editing(Level_Editor *editor, Level *level) {
 static void clear_tile(Level_State *state, Tile *tile) {
     if (tile->item.type == Item_Type_Dot_Small) {
         state->score -= kDot_Small_Value;
+        --state->small_dot_count;
         tile->item.type = Item_Type_None;
     }
     else if (tile->item.type == Item_Type_Dot_Large) {
         state->score -= kDot_Large_Value;
+        --state->large_dot_count;
         tile->item.type = Item_Type_None;
     }
     
@@ -421,428 +423,6 @@ static void clear_tile(Level_State *state, Tile *tile) {
 
 static void validate_level(Level_State *state) {
     
-}
-
-
-char get_char_from_actor_type(Actor *actor) {
-    char result = '?';    
-
-    if (!actor) {
-        result = '.';
-    }
-    else {
-        switch (actor->type) {
-            case Actor_Type_Ghost_Red:    { result = '1'; } break;
-            case Actor_Type_Ghost_Pink:   { result = '2'; } break;
-            case Actor_Type_Ghost_Cyan:   { result = '3'; } break;
-            case Actor_Type_Ghost_Orange: { result = '4'; } break;
-            case Actor_Type_Pacman:       { result = 'P'; } break;
-            default:                      { result = '?'; } break;
-        }
-    }
-    
-    return result;
-}
-
-
-char get_char_from_tile_type(Tile *tile) {
-    char result = '?';
-    
-    if (tile_has_wall(tile)) {
-        result = 'W';
-    }
-    else {
-        switch (tile->type) {
-            case Tile_Type_None:  { result = '.'; } break;
-            case Tile_Type_Floor: { result = '-'; } break;
-        }
-    }
-    
-    return result;
-}
-
-
-char get_char_from_item_type(Tile *tile) {
-    char result = '?';    
-    
-    switch (tile->item.type) {
-        case Item_Type_None:      { result = '.'; } break;
-        case Item_Type_Dot_Small: { result = '+'; } break;
-        case Item_Type_Dot_Large: { result = 'X'; } break;
-    }
-    
-    return result;
-}
-
-
-static b32 save_level(Level *level) {
-    b32 result = false;
-
-    u32 const buffer_size = 512;
-    char buffer[buffer_size];
-    _snprintf_s(buffer, buffer_size, _TRUNCATE, "data//levels//%u.level_txt", level->id);
-
-    HANDLE file_handle;
-    result = win32_open_file_for_writing(buffer, &file_handle);
-    if (result) {
-        DWORD bytes_written;
-        DWORD bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Name:\"%s\"\n", level->name);
-        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-        assert(bytes_to_write == bytes_written);
-
-        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "ID:%u\n", level->id);
-        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-        assert(bytes_to_write == bytes_written);
-
-        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Width:%u\n", level->width);
-        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-        assert(bytes_to_write == bytes_written);
-
-        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Height:%u\n", level->width);
-        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-        assert(bytes_to_write == bytes_written);
-
-        Level_State *state = level->current_state;
-
-        //
-        // Tiles        
-        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_tiles:\n");
-        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-        assert(bytes_to_write == bytes_written);        
-        
-        for (u32 y = 0; y < level->height; ++y) {
-            for (u32 x = 0; x < level->width; ++x) {
-                Tile *tile = get_tile_at(level, x, y);
-                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_tile_type(tile));
-                result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-                assert(bytes_to_write == bytes_written);
-            }
-            WriteFile(file_handle, "\n", 1, &bytes_written, nullptr);
-        }
-
-        //
-        // Items
-        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_items:\n");
-        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-        assert(bytes_to_write == bytes_written);
-        
-        for (u32 y = 0; y < level->height; ++y) {
-            for (u32 x = 0; x < level->width; ++x) {
-                Tile *tile = get_tile_at(level, x, y);
-                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_item_type(tile));
-                result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-                assert(bytes_to_write == bytes_written);
-            }
-            WriteFile(file_handle, "\n", 1, &bytes_written, nullptr);
-        }
-
-        //
-        // Actors
-        bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "Layer_actors:\n");
-        result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-        assert(bytes_to_write == bytes_written);
-        
-        for (u32 y = 0; y < level->height; ++y) {
-            for (u32 x = 0; x < level->width; ++x) {
-                Tile *tile = get_tile_at(level, x, y);
-                Actor *actor = get_actor(&state->actors, tile->actor_id);
-                bytes_to_write = _snprintf_s(buffer, buffer_size, _TRUNCATE, "%c", get_char_from_actor_type(actor));
-                result = WriteFile(file_handle, buffer, bytes_to_write, &bytes_written, nullptr);
-                assert(bytes_to_write == bytes_written);
-            }
-            WriteFile(file_handle, "\n", 1, &bytes_written, nullptr);
-        }
-        
-        CloseHandle(file_handle);
-    }
-
-    return result;
-}
-
-
-static b32 add_actor(Tokenizer *tokenizer, Level *level, Level_State *state, char c, u32 x, u32 y) {
-    b32 result = false;
-
-    Actor_Type constexpr all_actor_types[] = {Actor_Type_Pacman, Actor_Type_Ghost_Red, Actor_Type_Ghost_Pink, Actor_Type_Ghost_Cyan, Actor_Type_Ghost_Orange};
-    s32 actor_type_index = -1;
-    if (c == 'P') {
-        actor_type_index = 0;
-    } else {
-        actor_type_index = c - '0';
-    }
-    
-    if (actor_type_index >= 0 && actor_type_index < 5) {        
-        Actor *curr_actor = new_actor(&state->actors);
-        assert(curr_actor);
-
-        result = true;
-        curr_actor->position = V2u(x, y);
-        curr_actor->type = all_actor_types[actor_type_index];
-        curr_actor->state = Actor_State_Idle;
-        curr_actor->direction = Direction_Right;
-
-        Tile *curr_tile = get_tile_at(level, state, V2u(x, y));
-        assert(curr_tile);
-        curr_tile->actor_id = curr_actor->id;
-
-        
-        //
-        // Ghost
-        if (actor_type_index > 0) {
-            curr_actor->mode = Actor_Mode_Predator;
-            state->score += kGhost_Value;
-            ++state->ghost_count;
-        }
-
-    
-        //
-        // Pacman
-        else {
-            if (state->pacman_count == 0) {
-                curr_actor->mode = Actor_Mode_Prey;
-                level->pacman_id = curr_actor->id;
-                ++state->pacman_count;
-            }
-            else {
-                if (tokenizer) {
-                    tokenizer->error = true;
-                    _snprintf_s(tokenizer->error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found more than one pacman",
-                                tokenizer->path_and_name, tokenizer->line_number, tokenizer->line_position);
-                }
-                result = false;
-            }
-        }
-    }
-
-    return result;
-}
-
-
-static b32 load_level(Level *level, Resources *resources, char const *name) {
-    b32 result = false;    
-
-    Tokenizer tokenizer;
-    result = init_tokenizer(&tokenizer, "data\\levels\\", name);
-    if (result) {
-        fini_level(level);
-        init_level(level, resources);
-    
-        eat_spaces_and_newline(&tokenizer);
-        Token token;
-
-        // Name of level
-        require_identifier_with_exact_name(&tokenizer, &token, "Name");
-        require_token(&tokenizer, &token, Token_colon);
-        require_token(&tokenizer, &token, Token_string);
-        _snprintf_s(level->name, kLevel_Name_Max_Length, _TRUNCATE, "%s", token.data);
-
-        // Level id
-        require_identifier_with_exact_name(&tokenizer, &token, "ID");
-        require_token(&tokenizer, &token, Token_colon);
-        require_token(&tokenizer, &token, Token_number);
-        level->id = get_u32_from_token(&token);
-
-        //
-        // Width
-        require_identifier_with_exact_name(&tokenizer, &token, "Width");
-        require_token(&tokenizer, &token, Token_colon);
-        require_token(&tokenizer, &token, Token_number);
-        level->width = get_u32_from_token(&token);
-
-        //
-        // Height
-        require_identifier_with_exact_name(&tokenizer, &token, "Height");
-        require_token(&tokenizer, &token, Token_colon);
-        require_token(&tokenizer, &token, Token_number);
-        level->height = get_u32_from_token(&token);
-
-        
-        //
-        // Tiles
-        require_identifier_with_exact_name(&tokenizer, &token, "Layer_tiles");
-        require_token(&tokenizer, &token, Token_colon);
-        eat_spaces_and_newline(&tokenizer);
-        reload(&tokenizer);
-
-        Level_State *state = &level->original_state;
-        state->tile_count = level->width * level->height;
-        state->tiles = static_cast<Tile *>(calloc(state->tile_count, sizeof(Tile)));
-        assert(state->tiles);
-
-        b32 should_loop = !tokenizer.error;
-        b32 should_advance = true;
-        
-        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
-        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
-            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
-                Tile *tile = &state->tiles[(y * level->width) + x];
-
-                switch (tokenizer.curr_char) {
-                    case '.': {
-                        tile->type = Tile_Type_None;
-                    } break;
-
-                    case '-': {
-                        tile->type = Tile_Type_Floor;
-                    } break;
-                        
-                    case 'W': {
-                        tile->type = Tile_Type_Wall_0;
-                    } break;
-
-                    default: {                    
-                        token = get_token(&tokenizer);
-                        if (token.type == Token_comment) {
-                            skip_to_next_line(&tokenizer);
-                            should_advance = false;
-                        }
-                        else {
-                            tokenizer.error = true;
-                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the tile layer",
-                                        tokenizer.path_and_name, token.line_number, token.line_position);
-                            should_loop = false;
-                        }
-                    } break;
-                }
-
-                if (should_advance) {
-                    advance(&tokenizer);                
-                }
-                should_advance = true;
-
-                eat_spaces_and_newline(&tokenizer);
-                reload(&tokenizer);
-            }
-        }
-
-
-        //
-        // Items
-        require_identifier_with_exact_name(&tokenizer, &token, "Layer_items");
-        require_token(&tokenizer, &token, Token_colon);
-        eat_spaces_and_newline(&tokenizer);
-        reload(&tokenizer);
-        
-        should_loop = !tokenizer.error;
-        should_advance = true;
-        
-        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
-        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
-            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
-                Tile *tile = &state->tiles[(y * level->width) + x];
-
-                switch (tokenizer.curr_char) {
-                    case '.': {
-                        tile->item.type = Item_Type_None;
-                        tile->item.value = 0;
-                    } break;
-
-                    case '+': {
-                        tile->item.type = Item_Type_Dot_Small;
-                        tile->item.value = kDot_Small_Value;
-                        state->score += tile->item.value;
-                    } break;
-
-                    case 'X': {
-                        tile->item.type = Item_Type_Dot_Large;
-                        tile->item.value = kDot_Large_Value;
-                        state->score += tile->item.value;
-                    } break;
-                        
-                    default: {                    
-                        token = get_token(&tokenizer);
-                        if (token.type == Token_comment) {
-                            skip_to_next_line(&tokenizer);
-                            should_advance = false;
-                        }
-                        else {
-                            tokenizer.error = true;
-                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the items layer",
-                                        tokenizer.path_and_name, token.line_number, token.line_position);
-                            should_loop = false;
-                        }
-                    } break;
-                }
-
-                if (should_advance) {
-                    advance(&tokenizer);                
-                }
-                should_advance = true;
-
-                eat_spaces_and_newline(&tokenizer);
-                reload(&tokenizer);
-            }
-        }
-
-
-        //
-        // Actors
-        require_identifier_with_exact_name(&tokenizer, &token, "Layer_actors");
-        require_token(&tokenizer, &token, Token_colon);
-        eat_spaces_and_newline(&tokenizer);
-        reload(&tokenizer);
-        
-        should_loop = !tokenizer.error;
-        should_advance = true;
-        
-        //for (s32 y = level->height - 1; (y >= 0) && should_loop; --y) {
-        for (u32 y = 0; (y < level->height) && should_loop; ++y) {
-            for (u32 x = 0; (x < level->width) && should_loop; ++x) {
-                Tile *tile = &state->tiles[(y * level->width) + x];
-
-                switch (tokenizer.curr_char) {
-                    case '.': {
-                        tile->actor_id = kActor_ID_Null;
-                    } break;
-                        
-                    case 'P':
-                    case '1':
-                    case '2':
-                    case '3':
-                    case '4': {
-                        should_loop = add_actor(&tokenizer, level, state, tokenizer.curr_char, x, y);                        
-                    } break;
-                        
-                    default: {                    
-                        token = get_token(&tokenizer);
-                        if (token.type == Token_comment) {
-                            skip_to_next_line(&tokenizer);
-                            should_advance = false;
-                        }
-                        else {
-                            tokenizer.error = true;
-                            _snprintf_s(tokenizer.error_string, kTokenizer_Error_String_Max_Length, _TRUNCATE, "In %s at %u:%u, found invalid token in the actor layer",
-                                        tokenizer.path_and_name, token.line_number, token.line_position);
-                            should_loop = false;
-                        }
-                    } break;
-                }
-
-                if (should_advance) {
-                    advance(&tokenizer);                
-                }
-                should_advance = true;
-
-                eat_spaces_and_newline(&tokenizer);
-                reload(&tokenizer);
-            }
-        }
-        
-
-
-        //
-        // Done
-        adjust_walls_in_level(level, &level->original_state);        
-        copy_level_state(&level->states[0], &level->original_state);
-        level->first_valid_state_index = 0;
-        level->last_valid_state_index = 0;
-        level->current_state_index = 0;
-        level->current_state = &level->states[0];
-
-        fini_tokenizer(&tokenizer);
-    }
-
-    return result;
 }
 
 
@@ -875,7 +455,6 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
         draw_level(renderer, level, editor->render_mode, microseconds_since_start);
         draw_maps(renderer, level, level->maps, level->current_map_index);
 
-
         b32 changed_in_this_frame = false;
         editor->hot_tile = nullptr;
         Tile *hot_tile = editor->hot_tile;
@@ -907,8 +486,15 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                         
                         hot_tile->item.type = item_type;
                         
-                        if (item_type == Item_Type_Dot_Small)  current_state->score += kDot_Small_Value;
-                        if (item_type == Item_Type_Dot_Large)  current_state->score += kDot_Large_Value;
+                        if (item_type == Item_Type_Dot_Small) {
+                            current_state->score += kDot_Small_Value;
+                            ++current_state->small_dot_count;
+                        }
+                        
+                        if (item_type == Item_Type_Dot_Large) {
+                            current_state->score += kDot_Large_Value;
+                            ++current_state->large_dot_count;
+                        }
                     }
                     else if (selected_object->type == Object_Type_Actor) {
                         clear_tile(current_state, hot_tile);
@@ -916,13 +502,24 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                         if (type == Actor_Type_Pacman && current_state->pacman_count > 0) {
                             Actor *pacman = get_pacman(&editor->level);
                             if (pacman) {
-                                pacman->position = Pmc;
+                                Tile *old_tile = get_tile_at(level, current_state, pacman->position);
+                                if (!old_tile) {
+                                    int a = 0;
+                                    ++a;
+                                }
+
+                                old_tile->actor_id = kActor_ID_Null;
+                                pacman->position = Pmc;                                
                                 hot_tile->actor_id = pacman->id;
+                            }
+                            else {
+                                int a = 0;
+                                ++a;
                             }
                         }
                         else {
                             clear_tile(current_state, hot_tile);     
-                            add_actor(nullptr, &editor->level, current_state, Pmc.x, Pmc.y, type, false);
+                            add_actor(nullptr, &editor->level, current_state, Pmc.x, Pmc.y, type);
                         }
                     }
                     changed_in_this_frame = true;
@@ -1336,7 +933,8 @@ static void edit_level(Level_Editor *editor, Renderer *renderer, Input input, u3
                 if (load_result) {
                     editor->level_has_unsaved_changes = false;
                     editor->state = Level_Editor_State_Menu;
-                    editor->message = Level_Editor_Message_None;                    
+                    editor->message = Level_Editor_Message_None;
+                    create_maps_off_level(level);
                 }
                 else {
                     editor->message = Level_Editor_Message_Load_Failed;

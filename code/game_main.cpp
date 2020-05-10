@@ -27,7 +27,8 @@ struct Game {
 
     u32 microseconds_since_start = 0;
 
-    Array_Of_Moves all_the_moves;
+    Array_Of_Moves  all_the_moves;
+    Array_Of_Levels all_the_levels;
 
     Game_State state  = Game_State_Playing;
     u32 render_mode   = Level_Render_Mode_All;
@@ -91,6 +92,14 @@ b32 init_game(Game *game) {
             LOG_ERROR_STR(&game->log, "failed to load level", 0);
         }
     }
+    
+    u32 level_load_count = load_levels_from_disc(&game->all_the_levels, &game->resources);
+    if (level_load_count > 0) {
+        log_u32(&game->log, "Loaded levels", level_load_count);
+    }
+    else {
+        LOG_ERROR_STR(&game->log, "failed to load the levels", 0);
+    }
 
     return result;
 }
@@ -98,6 +107,7 @@ b32 init_game(Game *game) {
 
 void fini_game(Game *game) {
     fini_editor(&game->editor);
+    free_array_of_levels(&game->all_the_levels);
     fini_level(&game->current_level);
     free_resources(&game->resources);
     free_array_of_moves(&game->all_the_moves);
