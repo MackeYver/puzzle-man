@@ -270,7 +270,7 @@ v2s get_pacman_move(s32 **maps, Level *level, Actor *pacman) {
             Map_Direction closest_large_dot = get_shortest_direction_on_map(level, maps[Map_Dot_Large], pacman);
             assert(closest_large_dot.direction < Direction_Count);
 
-            if (closest_ghost.distance < closest_large_dot.distance) {
+            if ((closest_ghost.distance - 1) <= closest_large_dot.distance) {
                 Map_Direction flee = get_shortest_direction_on_map(level, maps[Map_Flee_Ghosts], pacman);
                 next_direction = flee.direction;
             }
